@@ -1,0 +1,209 @@
+# verified-deps.toml — SatGuard
+# Generated: 2026-03-13
+# REGOLA: nessuna dipendenza nel codice senza entry verificata qui.
+
+# ============================================================
+# Python — Core (MVP)
+# ============================================================
+
+[[dependency]]
+name = "sgp4"
+version = "2.25"
+verified_date = "2026-03-13"
+verified_via = "https://pypi.org/project/sgp4/"
+methods_used = [
+    "sgp4.api.Satrec.twoline2rv(line1, line2, WGS72)",
+    "satellite.sgp4(jd, fr) -> (error, position, velocity)",
+    "sgp4.api.WGS72",
+    "sgp4.api.WGS84",
+]
+notes = "Compiles official C++ from Revisiting Spacetrack Report #3. Default WGS72 (recommended for TLE-derived orbits). Returns position in km, velocity in km/s (TEME frame)."
+
+[[dependency]]
+name = "numpy"
+version = "2.4.3"
+verified_date = "2026-03-13"
+verified_via = "https://numpy.org/doc/stable/"
+methods_used = [
+    "numpy.array",
+    "numpy.linalg.inv",
+    "numpy.linalg.eig",
+    "numpy.linalg.norm",
+    "numpy.dot",
+    "numpy.cross",
+    "numpy.matmul",
+]
+notes = "Covariance matrix transformations (ECI->RTN), vector operations on position/velocity."
+
+[[dependency]]
+name = "scipy"
+version = "1.17.1"
+verified_date = "2026-03-13"
+verified_via = "https://docs.scipy.org/doc/scipy/reference/"
+methods_used = [
+    "scipy.spatial.KDTree(data)",
+    "scipy.spatial.KDTree.query_ball_point(point, r)",
+    "scipy.spatial.KDTree.query_pairs(r)",
+    "scipy.stats.norm",
+    "scipy.stats.chi2",
+    "scipy.integrate.quad",
+    "scipy.integrate.dblquad",
+]
+notes = "KDTree for O(N log N) conjunction screening. stats for Pc distributions. integrate.quad for Foster/Chan Pc numerical integration."
+
+[[dependency]]
+name = "matplotlib"
+version = "3.10.8"
+verified_date = "2026-03-13"
+verified_via = "https://matplotlib.org/stable/api/index.html"
+methods_used = [
+    "matplotlib.pyplot.figure",
+    "matplotlib.pyplot.subplot",
+    "mpl_toolkits.mplot3d.Axes3D",
+    "matplotlib.pyplot.plot",
+    "matplotlib.pyplot.savefig",
+]
+notes = "3D orbit visualization, 2D Pc evolution plots, conjunction geometry diagrams."
+
+[[dependency]]
+name = "httpx"
+version = "0.28.1"
+verified_date = "2026-03-13"
+verified_via = "https://www.python-httpx.org/api/"
+methods_used = [
+    "httpx.AsyncClient",
+    "httpx.AsyncClient.get",
+    "httpx.AsyncClient.post",
+    "httpx.Response.json()",
+    "httpx.Response.text",
+    "httpx.Response.raise_for_status()",
+]
+notes = "Async HTTP client for Space-Track.org (POST login + GET data) and CelesTrak (GET)."
+
+[[dependency]]
+name = "click"
+version = "8.3.1"
+verified_date = "2026-03-13"
+verified_via = "https://click.palletsprojects.com/en/stable/"
+methods_used = [
+    "click.group",
+    "click.command",
+    "click.option",
+    "click.argument",
+]
+notes = "CLI framework for 'satguard' command with subcommands (screen, analyze, serve)."
+
+# ============================================================
+# Python — API backend (v0.3+)
+# ============================================================
+
+[[dependency]]
+name = "fastapi"
+version = "0.135.1"
+verified_date = "2026-03-13"
+verified_via = "https://fastapi.tiangolo.com/"
+methods_used = [
+    "fastapi.FastAPI",
+    "fastapi.APIRouter",
+    "@app.get / @app.post decorators",
+    "fastapi.responses.JSONResponse",
+]
+notes = "REST API serving conjunction data to CesiumJS frontend. Post-MVP (v0.3)."
+
+# ============================================================
+# Python — Dev tools
+# ============================================================
+
+[[dependency]]
+name = "hypothesis"
+version = "6.151.9"
+verified_date = "2026-03-13"
+verified_via = "https://hypothesis.readthedocs.io/en/latest/data.html"
+methods_used = [
+    "hypothesis.given",
+    "hypothesis.strategies.floats(min_value, max_value, allow_nan=False)",
+    "hypothesis.strategies.integers",
+    "hypothesis.strategies.composite",
+]
+notes = "L3 property-based testing. Custom strategies for orbital elements (eccentricity [0,1), inclination [0,pi])."
+
+[[dependency]]
+name = "pytest"
+version = "9.0.2"
+verified_date = "2026-03-13"
+verified_via = "https://pypi.org/project/pytest/"
+methods_used = [
+    "pytest.mark.parametrize",
+    "pytest.fixture",
+    "pytest.approx",
+    "pytest.raises",
+]
+notes = "Test runner for L1-L5 verification levels."
+
+[[dependency]]
+name = "mypy"
+version = "1.19.1"
+verified_date = "2026-03-13"
+verified_via = "https://pypi.org/project/mypy/"
+methods_used = ["mypy src/"]
+notes = "Static type checking. Part of check-all Makefile target."
+
+[[dependency]]
+name = "ruff"
+version = "0.15.6"
+verified_date = "2026-03-13"
+verified_via = "https://pypi.org/project/ruff/"
+methods_used = ["ruff check", "ruff format"]
+notes = "Linter and formatter. Replaces flake8+black+isort."
+
+# ============================================================
+# JavaScript — Globe 3D (v0.3+, post-MVP)
+# ============================================================
+
+[[dependency]]
+name = "cesium"
+version = "1.139.1"
+verified_date = "2026-03-13"
+verified_via = "https://cesium.com/learn/cesiumjs/ref-doc/"
+methods_used = ["Viewer", "Entity", "CzmlDataSource", "EllipsoidGraphics", "Camera"]
+notes = "Post-MVP (v0.3). Globe 3D. Requires static assets config (tiles, workers) — use vite-plugin-cesium."
+
+[[dependency]]
+name = "resium"
+version = "1.19.4"
+verified_date = "2026-03-13"
+verified_via = "https://resium.reearth.io/getting_started"
+methods_used = ["<Viewer>", "<Entity>", "<CzmlDataSource>"]
+notes = "Post-MVP (v0.3). React bindings for CesiumJS. Peer deps: cesium 1.x, react >=18.2.0. CzmlDataSource uses 'data' prop."
+
+[[dependency]]
+name = "react"
+version = "19.2.4"
+verified_date = "2026-03-13"
+verified_via = "https://www.npmjs.com/package/react"
+methods_used = ["useState", "useEffect", "useRef"]
+notes = "Post-MVP (v0.3). Verify compatibility with resium (requires >=18.2.0)."
+
+[[dependency]]
+name = "react-dom"
+version = "19.2.4"
+verified_date = "2026-03-13"
+verified_via = "https://www.npmjs.com/package/react-dom"
+methods_used = ["createRoot"]
+notes = "Post-MVP (v0.3). Paired with react."
+
+[[dependency]]
+name = "vite"
+version = "8.0.0"
+verified_date = "2026-03-13"
+verified_via = "https://www.npmjs.com/package/vite"
+methods_used = ["dev server", "build"]
+notes = "Post-MVP (v0.3). Build tool per il frontend globe. Needs vite-plugin-cesium for static assets."
+
+[[dependency]]
+name = "satellite.js"
+version = "6.0.2"
+verified_date = "2026-03-13"
+verified_via = "https://github.com/shashwatak/satellite-js"
+methods_used = ["twoline2satrec", "propagate", "eciToGeodetic", "degreesLat", "degreesLong"]
+notes = "Post-MVP (v0.3). Client-side SGP4 propagation per il globe. Returns ECI in km, geodetic in radians."

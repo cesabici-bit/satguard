@@ -1,0 +1,10 @@
+# Golden Snapshot L4 — Smoke Test Raw Output
+# Generated: 2026-03-13
+# Approved by: cesab — 2026-03-13
+#
+# This is the actual captured output of: pytest tests/test_smoke.py -s
+# Any change to this output requires human review.
+
+=== SMOKE TEST OUTPUT ===
+No conjunctions found in 3-day window (expected for these orbits)
+Pipeline exercised: parse OK, propagate OK, screen OK

@@ -1,0 +1,66 @@
+[build-system]
+requires = ["setuptools>=68.0", "setuptools-scm>=8.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "satguard"
+version = "0.1.0"
+description = "Open-source conjunction assessment pipeline for space objects"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.12"
+authors = [
+    {name = "Genius Lab"},
+]
+keywords = ["space", "conjunction", "collision", "satellite", "sgp4", "cdm"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Astronomy",
+]
+dependencies = [
+    "sgp4>=2.22",
+    "numpy>=2.0",
+    "scipy>=1.14",
+    "matplotlib>=3.9",
+    "httpx>=0.27",
+    "click>=8.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=9.0",
+    "hypothesis>=6.100",
+    "mypy>=1.10",
+    "ruff>=0.4",
+]
+
+[project.scripts]
+satguard = "satguard.cli.main:cli"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = false
+warn_unused_configs = true
+disallow_untyped_defs = true
+packages = ["satguard"]
+mypy_path = "src"
+ignore_missing_imports = true
+
+[tool.ruff]
+src = ["src", "tests"]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "network: marks tests that require network access",
+]
