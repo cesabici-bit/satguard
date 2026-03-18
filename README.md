@@ -8,6 +8,7 @@ SatGuard provides a complete Python toolkit for satellite conjunction assessment
 
 ## Features
 
+### Core (v0.1)
 - **TLE Parser** — Two-Line Element parsing with checksum validation
 - **Catalog Ingest** — CelesTrak (no auth) and Space-Track.org (with credentials)
 - **SGP4 Propagation** — High-fidelity orbit propagation via compiled sgp4 library
@@ -16,6 +17,14 @@ SatGuard provides a complete Python toolkit for satellite conjunction assessment
 - **Covariance Handling** — Default covariance models, 3D→2D encounter plane projection
 - **CDM Output** — CCSDS Conjunction Data Message (KVN format)
 - **CLI** — One-command screening: `satguard screen --norad-id 25544 --days 7`
+
+### Monitoring (v0.2)
+- **Pc Evolution Tracking** — Track how collision probability changes over time (JSON history)
+- **Trend Analysis** — Detect RISING/FALLING/STABLE trends, estimate time to threshold
+- **Webhook Alerts** — Fire alerts to Slack/Discord/Teams when Pc exceeds threshold
+- **Covariance Assessment** — Evaluate matrix quality (REALISTIC/SUSPECT/DEFAULT)
+- **CLI `watch`** — Screen + record + alert in one command
+- **CLI `history`** — View Pc evolution with optional matplotlib plot
 
 ## Installation
 
@@ -104,14 +113,27 @@ print(f"{len(catalog)} active objects")
 
 ```
 satguard screen [OPTIONS]
+  --norad-id INTEGER     NORAD catalog number [required]
+  --days FLOAT           Screening window in days (default: 3)
+  --threshold FLOAT      Distance threshold in km (default: 50)
+  --step FLOAT           Propagation step in seconds (default: 60)
+  --output-cdm           Output CDM for each conjunction
+  --record               Save results to Pc history (v0.2)
+  --assess-covariance    Show covariance quality metrics (v0.2)
 
-Options:
-  --norad-id INTEGER  NORAD catalog number of primary object [required]
-  --days FLOAT        Screening window in days (default: 3)
-  --threshold FLOAT   Distance threshold in km (default: 50)
-  --step FLOAT        Propagation step in seconds (default: 60)
-  --output-cdm        Output CDM for each conjunction
-  --help              Show this message and exit.
+satguard watch [OPTIONS]           (v0.2)
+  --norad-id INTEGER     NORAD catalog number [required]
+  --days FLOAT           Screening window in days (default: 3)
+  --config PATH          Alert config TOML file
+  --history-dir PATH     History storage directory
+
+satguard history [OPTIONS]         (v0.2)
+  --norad-ids TEXT        Comma-separated NORAD IDs (e.g., 25544,41335) [required]
+  --history-dir PATH     History storage directory
+  --plot                 Save Pc evolution plot as PNG
+
+satguard alert-test [OPTIONS]      (v0.2)
+  --config PATH          Alert config TOML file
 ```
 
 ## Example Output
@@ -156,7 +178,7 @@ Results: 5 conjunction(s) found
 
 ## Validation
 
-SatGuard is validated at 5 levels with 118 tests:
+SatGuard is validated at 5 levels with 161 tests:
 
 | Level | Description | Count |
 |-------|-------------|-------|
@@ -182,10 +204,12 @@ satguard/
 │   ├── propagate/     # SGP4 orbit propagation
 │   ├── screen/        # KDTree conjunction screening
 │   ├── assess/        # Collision probability (Foster, Chan, Alfano)
-│   ├── covariance/    # Covariance models & projection
+│   ├── covariance/    # Covariance models, projection & assessment
+│   ├── history/       # Pc evolution tracking (JSON persistence)
+│   ├── alert/         # Webhook alerts (Slack/Discord/Teams)
 │   ├── cdm/           # CCSDS CDM writer
-│   └── cli/           # Click CLI
-├── tests/             # 118 tests across 5 validation levels
+│   └── cli/           # Click CLI (screen, watch, history, alert-test)
+├── tests/             # 161 tests across 5 validation levels
 └── verify/            # Two-tool cross-verification
 ```
 

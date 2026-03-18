@@ -1,12 +1,16 @@
 """Covariance handling for collision probability computation.
 
 Provides default covariance matrices (empirical values from NASA CARA),
-coordinate transformations (ECI→RTN), and projection to encounter plane.
+coordinate transformations (ECI→RTN), projection to encounter plane,
+and covariance realism assessment.
 
 Reference: Vallado 5th Ed Section 3.3, NASA CARA best practices.
+Assessment: Hejduk et al. 2013, "Covariance Realism" (NASA CARA).
 """
 
 from __future__ import annotations
+
+from dataclasses import dataclass
 
 import numpy as np
 from numpy.typing import NDArray
@@ -185,3 +189,124 @@ def project_to_encounter_plane(
     cov_2d = P @ cov_combined_3d @ P.T
 
     return cov_2d
+
+
+# ---------------------------------------------------------------------------
+# Covariance realism assessment (v0.2)
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True, slots=True)
+class CovarianceAssessment:
+    """Result of covariance realism assessment.
+
+    Metrics based on NASA CARA best practices (Hejduk et al. 2013).
+    """
+
+    eigenvalue_ratio: float
+    """Max / min eigenvalue of 3x3 position covariance. ~1 = isotropic."""
+
+    condition_number: float
+    """Condition number of full 6x6 matrix."""
+
+    is_positive_definite: bool
+    """True if all eigenvalues are strictly positive."""
+
+    position_sigma_max_km: float
+    """sqrt(max eigenvalue) of position covariance [km]."""
+
+    position_sigma_min_km: float
+    """sqrt(min eigenvalue) of position covariance [km]."""
+
+    realism_flag: str
+    """'REALISTIC', 'SUSPECT', or 'DEFAULT'."""
+
+
+def assess_covariance(cov: CovarianceMatrix) -> CovarianceAssessment:
+    """Assess realism of a covariance matrix.
+
+    Criteria (SOURCE: NASA CARA, Hejduk et al. 2013):
+    - Eigenvalue ratio > 1000 → SUSPECT (overly elongated uncertainty ellipsoid)
+    - Condition number > 1e6 → SUSPECT
+    - Diagonal matrix matching a default → DEFAULT
+
+    Args:
+        cov: CovarianceMatrix to assess.
+
+    Returns:
+        CovarianceAssessment with quality metrics and flag.
+    """
+    pos_cov = cov.position_cov
+    pos_eig = np.linalg.eigvalsh(pos_cov)
+    full_eig = np.linalg.eigvalsh(cov.matrix)
+
+    eig_min = float(pos_eig[0])
+    eig_max = float(pos_eig[-1])
+
+    # Guard against zero/negative eigenvalues
+    is_pd = bool(np.all(full_eig > 1e-15))
+
+    eigenvalue_ratio = eig_max / eig_min if eig_min > 1e-15 else float("inf")
+
+    full_eig_abs = np.abs(full_eig)
+    if full_eig_abs[0] > 1e-30:
+        condition_number = float(full_eig_abs[-1] / full_eig_abs[0])
+    else:
+        condition_number = float("inf")
+
+    sigma_max = float(np.sqrt(max(eig_max, 0.0)))
+    sigma_min = float(np.sqrt(max(eig_min, 0.0)))
+
+    # Determine realism flag
+    flag = _classify_covariance(cov, eigenvalue_ratio, condition_number, is_pd)
+
+    return CovarianceAssessment(
+        eigenvalue_ratio=eigenvalue_ratio,
+        condition_number=condition_number,
+        is_positive_definite=is_pd,
+        position_sigma_max_km=sigma_max,
+        position_sigma_min_km=sigma_min,
+        realism_flag=flag,
+    )
+
+
+def _classify_covariance(
+    cov: CovarianceMatrix,
+    eigenvalue_ratio: float,
+    condition_number: float,
+    is_pd: bool,
+) -> str:
+    """Classify covariance as REALISTIC, SUSPECT, or DEFAULT."""
+    # Check if it matches a default diagonal matrix
+    for regime_vals in _DEFAULT_COV.values():
+        diag = np.concatenate(
+            [regime_vals["pos_sigma_km"] ** 2, regime_vals["vel_sigma_km_s"] ** 2]
+        )
+        if np.allclose(cov.matrix, np.diag(diag), atol=1e-15):
+            return "DEFAULT"
+
+    if not is_pd:
+        return "SUSPECT"
+    if eigenvalue_ratio > 1000.0:
+        return "SUSPECT"
+    if condition_number > 1e6:
+        return "SUSPECT"
+
+    return "REALISTIC"
+
+
+def scale_covariance(
+    cov: CovarianceMatrix, factor: float,
+) -> CovarianceMatrix:
+    """Scale a covariance matrix by a scalar factor.
+
+    Useful for sensitivity analysis (e.g., factor=2 doubles uncertainty).
+
+    Args:
+        cov: Original covariance matrix.
+        factor: Scaling factor (must be positive).
+
+    Returns:
+        New CovarianceMatrix with scaled values.
+    """
+    assert factor > 0, f"Scale factor must be positive, got {factor}"
+    return CovarianceMatrix(cov.matrix * factor, frame=cov.frame)
