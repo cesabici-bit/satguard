@@ -108,7 +108,15 @@ methods_used = [
     "@app.get / @app.post decorators",
     "fastapi.responses.JSONResponse",
 ]
-notes = "REST API serving conjunction data to CesiumJS frontend. Post-MVP (v0.3)."
+notes = "REST API serving conjunction data to CesiumJS frontend. v0.3."
+
+[[dependency]]
+name = "uvicorn"
+version = "0.34.0"
+verified_date = "2026-03-18"
+verified_via = "https://pypi.org/project/uvicorn/"
+methods_used = ["uvicorn.run(app, host, port)"]
+notes = "ASGI server for FastAPI. uvicorn[standard] includes uvloop + httptools."
 
 # ============================================================
 # Python — Dev tools
@@ -198,7 +206,23 @@ version = "8.0.0"
 verified_date = "2026-03-13"
 verified_via = "https://www.npmjs.com/package/vite"
 methods_used = ["dev server", "build"]
-notes = "Post-MVP (v0.3). Build tool per il frontend globe. Needs vite-plugin-cesium for static assets."
+notes = "v0.3. Build tool per il frontend globe."
+
+[[dependency]]
+name = "vite-plugin-static-copy"
+version = "2.2.0"
+verified_date = "2026-03-18"
+verified_via = "https://www.npmjs.com/package/vite-plugin-static-copy"
+methods_used = ["viteStaticCopy({ targets: [...] })"]
+notes = "Copies Cesium static assets (Workers, ThirdParty, Assets, Widgets) to build output. Replaces discontinued vite-plugin-cesium."
+
+[[dependency]]
+name = "@vitejs/plugin-react"
+version = "4.3.4"
+verified_date = "2026-03-18"
+verified_via = "https://www.npmjs.com/package/@vitejs/plugin-react"
+methods_used = ["react()"]
+notes = "Vite plugin for React Fast Refresh + JSX transform."
 
 [[dependency]]
 name = "satellite.js"

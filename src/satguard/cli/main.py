@@ -471,6 +471,26 @@ def alert_test(config_path: str | None) -> None:
     asyncio.run(_alert_test_async(config_path))
 
 
+@cli.command()
+@click.option("--port", default=8000, type=int, help="Port to serve on (default: 8000)")
+@click.option("--host", default="127.0.0.1", type=str, help="Host to bind (default: 127.0.0.1)")
+@click.option("--dev", is_flag=True, help="Run in dev mode (no static mount, auto-reload)")
+def serve(port: int, host: str, dev: bool) -> None:
+    """Start the SatGuard web server with 3D globe."""
+    import uvicorn
+
+    from satguard.api.app import app, mount_static
+
+    if not dev:
+        mount_static()
+        click.echo(f"SatGuard Globe 3D — http://{host}:{port}")
+    else:
+        click.echo(f"SatGuard API (dev) — http://{host}:{port}")
+        click.echo("Frontend: run 'cd web && npm run dev' separately")
+
+    uvicorn.run(app, host=host, port=port)
+
+
 async def _alert_test_async(config_path: str | None) -> None:
     import numpy as np
 

@@ -5,6 +5,28 @@ All notable changes to SatGuard will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-03-18
+
+### Added
+
+- **Globe 3D**: Interactive CesiumJS globe with 30K+ satellites rendered in real-time via PointPrimitiveCollection + satellite.js client-side SGP4 propagation
+- **FastAPI backend**: Three REST endpoints — `GET /api/catalog` (active catalog with orbit classification, 1h TTL cache), `GET /api/conjunctions` (top 50 pre-computed, 10min cache), `GET /api/objects/{id}` (orbital elements + derived params)
+- **Click-to-inspect with fly-to**: Click any satellite dot or search by name/NORAD ID → smooth camera transition + detail panel with identification, orbital elements, derived parameters
+- **Collision risk panel**: ObjectInspector shows all conjunction risks for selected object with Pc, miss distance, relative velocity, TCA, and clickable links to partner objects
+- **Orbit type filters**: Checkbox toggles for LEO/MEO/GEO/OTHER with neon color coding (green/magenta/gold/cyan)
+- **Time controls**: Play/pause, speed multiplier (1x/10x/60x/600x), simulation clock display, reset-to-now
+- **Conjunction overlay**: Glowing polylines between at-risk pairs, colored by Pc severity (red/orange/yellow)
+- **Auto-rotate camera**: Slow globe rotation that pauses on user interaction
+- **CLI `satguard serve`**: Single command to start API server (`satguard serve --port 8000`)
+- **Dark globe theme**: CARTO Dark Matter basemap for maximum satellite dot visibility
+- **16 new API tests**: FastAPI TestClient with mocked catalog data
+
+### Changed
+
+- Bumped version to 0.3.0
+- Added `fastapi` and `uvicorn[standard]` to dependencies
+- Total tests: 177 passed (from 161)
+
 ## [0.2.0] - 2026-03-18
 
 ### Added
