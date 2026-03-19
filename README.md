@@ -1,10 +1,10 @@
 # SatGuard
 
-Open-source conjunction assessment pipeline for space objects.
+Open-source conjunction assessment pipeline for space objects — from TLE ingest to maneuver planning.
 
-**TLE ingest → SGP4 propagation → conjunction screening → collision probability → CDM output**
+**TLE ingest → SGP4 propagation → conjunction screening → collision probability → CDM output → 3D globe → fleet ops → maneuver planning**
 
-SatGuard provides a complete Python toolkit for satellite conjunction assessment, implementing industry-standard algorithms (Foster, Chan, Alfano) with rigorous validation against published references (Vallado, Alfano 2005, NASA CARA).
+SatGuard provides a complete Python toolkit for satellite conjunction assessment, implementing industry-standard algorithms (Foster, Chan, Alfano) with rigorous validation against published references (Vallado, Alfano 2005, NASA CARA). Includes an interactive CesiumJS 3D globe, fleet batch screening, PDF reports, CW-based maneuver planning, and historical replay.
 
 ## Features
 
@@ -25,6 +25,36 @@ SatGuard provides a complete Python toolkit for satellite conjunction assessment
 - **Covariance Assessment** — Evaluate matrix quality (REALISTIC/SUSPECT/DEFAULT)
 - **CLI `watch`** — Screen + record + alert in one command
 - **CLI `history`** — View Pc evolution with optional matplotlib plot
+
+### Globe 3D (v0.3)
+- **Interactive Globe** — CesiumJS with 30K+ satellites rendered via PointPrimitiveCollection + satellite.js client-side SGP4
+- **Click-to-Inspect** — Click any satellite → fly-to camera transition + detail panel (orbital elements, derived params)
+- **Conjunction Overlay** — Glowing polylines between at-risk pairs, colored by Pc severity
+- **Orbit Filters** — Toggle LEO/MEO/GEO/OTHER with color coding
+- **Time Controls** — Play/pause, speed multiplier (1x–600x), reset-to-now
+- **FastAPI Backend** — REST API serving catalog, conjunctions, and object details
+- **CLI `satguard serve`** — Single command to launch API + globe
+
+### Globe Enhanced (v0.4)
+- **Siblings Detection** — Filter co-orbiting objects (same launch designator) from results
+- **3D Conjunction Arcs** — Animated polylines connecting at-risk pairs on the globe
+- **Heatmap Mode** — Density overlay showing conjunction hotspots
+- **Time Slider** — Scrub through simulation time with playback
+- **ConjunctionBrowser** — Browse, sort, and filter all conjunctions in sidebar panel
+
+### Fleet Operations (v0.5)
+- **Fleet YAML Config** — Define constellations with per-object thresholds in `fleet.yaml`
+- **Batch Screening** — Screen entire fleet in one command (vectorized, 29s for full catalog)
+- **PDF Reports** — Conjunction summary with risk matrix (fpdf2)
+- **CLI `satguard fleet`** — Batch screen a constellation
+- **CLI `satguard report`** — Generate PDF report
+
+### Maneuver & Replay (v0.6)
+- **CW Maneuver Planning** — Clohessy-Wiltshire linearized relative motion for avoidance maneuvers
+- **Tradespace Analysis** — Grid search (delta-v × time) → minimum-fuel option meeting Pc threshold
+- **Historical Replay** — Re-propagate archived TLEs to reconstruct conjunction timeline
+- **CLI `satguard maneuver`** — Plan avoidance maneuver for a conjunction pair
+- **CLI `satguard replay`** — Replay historical conjunction from archived TLEs
 
 ## Installation
 
@@ -134,6 +164,27 @@ satguard history [OPTIONS]         (v0.2)
 
 satguard alert-test [OPTIONS]      (v0.2)
   --config PATH          Alert config TOML file
+
+satguard serve [OPTIONS]           (v0.3)
+  --port INTEGER         API server port (default: 8000)
+
+satguard fleet [OPTIONS]           (v0.5)
+  --config PATH          Fleet YAML config file [required]
+  --output-dir PATH      Output directory for results
+
+satguard report [OPTIONS]          (v0.5)
+  --config PATH          Fleet YAML config file [required]
+  --output PATH          Output PDF path
+
+satguard maneuver [OPTIONS]        (v0.6)
+  --norad-id INTEGER     Primary NORAD ID [required]
+  --norad-id-secondary INTEGER  Secondary NORAD ID [required]
+  --max-dv FLOAT         Maximum delta-v in m/s (default: 1.0)
+  --pc-threshold FLOAT   Target Pc threshold (default: 1e-5)
+
+satguard replay [OPTIONS]          (v0.6)
+  --norad-ids TEXT        Comma-separated NORAD IDs [required]
+  --history-dir PATH     History storage directory
 ```
 
 ## Example Output
@@ -178,15 +229,17 @@ Results: 5 conjunction(s) found
 
 ## Validation
 
-SatGuard is validated at 5 levels with 161 tests:
+SatGuard is validated at 5 levels with 254 tests:
 
 | Level | Description | Count |
 |-------|-------------|-------|
-| **L1** Unit | Core function behavior | 95 |
-| **L2** Domain | Values from external sources (Vallado, Alfano, NASA CARA) | ~15 |
-| **L3** Property | Hypothesis-based invariant testing | 11 |
+| **L1** Unit | Core function behavior | ~158 |
+| **L2** Domain | Values from external sources (Vallado, Alfano, NASA CARA) | ~25 |
+| **L3** Property | Hypothesis-based invariant testing (Hypothesis + CW) | 18 |
 | **L4** Snapshot | Golden output approved by human review | 1 |
-| **L5** External | Cross-validation vs Chan 2008, NASA CARA, real CSMs | 12 |
+| **L5** External | Cross-validation vs Chan 2008, NASA CARA, real CSMs | 15 |
+
+M4 two-tool verification: CW analytical vs Hill numerical integration (7/7 PASS, <0.001% error).
 
 Run all checks:
 
@@ -202,15 +255,20 @@ satguard/
 ├── src/satguard/
 │   ├── catalog/       # TLE parsing, CelesTrak & Space-Track ingest
 │   ├── propagate/     # SGP4 orbit propagation
-│   ├── screen/        # KDTree conjunction screening
+│   ├── screen/        # KDTree + vectorized SatrecArray screening
 │   ├── assess/        # Collision probability (Foster, Chan, Alfano)
 │   ├── covariance/    # Covariance models, projection & assessment
-│   ├── history/       # Pc evolution tracking (JSON persistence)
+│   ├── history/       # Pc evolution tracking + historical replay
 │   ├── alert/         # Webhook alerts (Slack/Discord/Teams)
+│   ├── fleet/         # Fleet YAML config + batch screening
+│   ├── report/        # PDF report generation (fpdf2)
+│   ├── maneuver/      # CW equations + tradespace planner
+│   ├── api/           # FastAPI backend (catalog, conjunctions, maneuver, replay)
 │   ├── cdm/           # CCSDS CDM writer
-│   └── cli/           # Click CLI (screen, watch, history, alert-test)
-├── tests/             # 161 tests across 5 validation levels
-└── verify/            # Two-tool cross-verification
+│   └── cli/           # Click CLI (screen, watch, fleet, maneuver, replay, serve)
+├── tests/             # 254 tests across 5 validation levels
+├── verify/            # Two-tool cross-verification (CW vs Hill)
+└── web/               # CesiumJS 3D globe (React + Resium)
 ```
 
 ## References
@@ -220,6 +278,7 @@ satguard/
 - Chan, F.K. (2008). *Spacecraft Collision Probability*. AIAA.
 - Foster, J.L. & Estes, H.S. (1992). "A Parametric Analysis of Orbital Debris Collision Probability." NASA JSC-25898.
 - CCSDS 508.0-B-1: Conjunction Data Message standard.
+- Clohessy, W.H. & Wiltshire, R.S. (1960). "Terminal Guidance System for Satellite Rendezvous." *J. Aerospace Sciences*.
 
 ## License
 

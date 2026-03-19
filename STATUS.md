@@ -1,17 +1,15 @@
 # Status — SatGuard
 
 ## Fase Corrente
-v0.5.1 — Vectorized fleet screening — Implementata, test verdi.
+v0.6.0 — Maneuver Planning + Historical Replay + docs polish. 254 test verdi.
 
-## Ultimo Subtask Completato (v0.5.1)
-- S0: Nuovo modulo `screen/vectorized.py` — SatrecArray + KDTree logica estratta da app.py
-- S1: Riscritto `fleet/batch.py` — screen_fleet() ora usa vectorized_screen() con primary_ids filter
-- S2: Riscritto `api/app.py:_compute_conjunctions()` — delega a vectorized_screen(), ~200 LOC rimossi
-- S3: 225 passed, 1 skipped — 0 regressioni. ruff clean, mypy clean.
-- Performance: fleet screening ora propaga TUTTO il catalogo in 1 chiamata C (SatrecArray) anziché loop Python per ~14K oggetti
+## Ultimo Subtask Completato (v0.6.0 docs)
+- CHANGELOG aggiornato con entry v0.4.0 → v0.6.0
+- README aggiornato con tutte le feature v0.1–v0.6 (Globe 3D, Fleet, Maneuver, Replay, 254 test)
+- 254 tests passing, 1 skipped, 0 regressions
 
 ## Prossimo Subtask
-- v0.6: Maneuver planning + historical replay
+- Da decidere con utente
 
 ## Blockers
 Nessuno
@@ -24,6 +22,9 @@ Nessuno
 - History: JSON files in ~/.satguard/history/, one per conjunction pair per TCA date
 - Alerts: webhook POST only, TOML config, cooldown-based dedup
 - datetime: always UTC, ISO 8601 with Z suffix
+- CW equations: valid for e < 0.05, burn-to-TCA < 1 orbital period
+- Maneuver planning: tradespace (dv × time) → min-fuel that meets Pc threshold
+- Historical replay: re-propagates archived TLEs → timeline of recomputed miss/Pc
 
 ## Moduli Implementati
 | Modulo | File | Status |
@@ -39,30 +40,38 @@ Nessuno
 | Chan Pc | `src/satguard/assess/chan.py` | OK |
 | Alfano Pc | `src/satguard/assess/alfano.py` | OK |
 | CDM Writer | `src/satguard/cdm/writer.py` | OK |
-| History Store | `src/satguard/history/store.py` | OK (v0.2) |
+| History Store | `src/satguard/history/store.py` | OK (v0.6 — +TLE fields) |
 | Pc Evolution | `src/satguard/history/evolution.py` | OK (v0.2) |
+| Historical Replay | `src/satguard/history/replay.py` | OK (v0.6) |
+| CW Equations | `src/satguard/maneuver/cw.py` | OK (v0.6) |
+| Maneuver Planner | `src/satguard/maneuver/planner.py` | OK (v0.6) |
 | Alert Rules | `src/satguard/alert/rules.py` | OK (v0.2) |
 | Webhook | `src/satguard/alert/webhook.py` | OK (v0.2) |
-| CLI | `src/satguard/cli/main.py` | OK |
-| Vectorized Screen | `src/satguard/screen/vectorized.py` | OK (v0.5.1) — shared SatrecArray+KDTree |
-| API App | `src/satguard/api/app.py` | OK (v0.5.1) — delegates to vectorized |
+| CLI | `src/satguard/cli/main.py` | OK (v0.6 — +maneuver, +replay) |
+| Vectorized Screen | `src/satguard/screen/vectorized.py` | OK (v0.5.1) |
+| API App | `src/satguard/api/app.py` | OK (v0.6 — +POST maneuver, +GET replay) |
 | API Cache | `src/satguard/api/cache.py` | OK (v0.3) |
-| Globe 3D | `web/src/components/Globe.tsx` | OK (v0.4) — siblings, arcs, heatmap |
-| ObjectInspector | `web/src/components/ObjectInspector.tsx` | OK (v0.4) — siblings, View 3D |
-| FilterPanel | `web/src/components/FilterPanel.tsx` | OK (v0.4) — heatmap toggle |
-| TimeControls | `web/src/components/TimeControls.tsx` | OK (v0.4) — time slider |
+| Globe 3D | `web/src/components/Globe.tsx` | OK (v0.4) |
+| ObjectInspector | `web/src/components/ObjectInspector.tsx` | OK (v0.4) |
+| FilterPanel | `web/src/components/FilterPanel.tsx` | OK (v0.4) |
+| TimeControls | `web/src/components/TimeControls.tsx` | OK (v0.4) |
 | ConjunctionBrowser | `web/src/components/ConjunctionBrowser.tsx` | OK (v0.4) |
 | Siblings util | `web/src/utils/siblings.ts` | OK (v0.4) |
-| Heatmap util | `web/src/utils/heatmap.ts` | OK (v0.4) — gaussian canvas |
+| Heatmap util | `web/src/utils/heatmap.ts` | OK (v0.4) |
 
 ## Test Coverage per Livello
 | Livello | File | # Test |
 |---------|------|--------|
-| L1 Unit | test_tle_parser, test_propagation, test_screening, test_covariance, test_collision_prob, test_cdm, test_celestrak, test_spacetrack, test_covariance_realism, test_history, test_alert, test_api | ~136 |
-| L2 Domain | sparsi (# SOURCE:) | ~15 |
-| L3 Property | test_property.py | 11 |
+| L1 Unit | test_tle_parser, test_propagation, test_screening, test_covariance, test_collision_prob, test_cdm, test_celestrak, test_spacetrack, test_covariance_realism, test_history, test_alert, test_api, test_maneuver, test_replay | ~158 |
+| L2 Domain | sparsi (# SOURCE:) — Curtis Ch.7, NASA CARA, Alfano 2005 | ~18 |
+| L3 Property | test_property.py + test_maneuver.py (CW) | 13 |
 | L4 Snapshot | tests/snapshots/golden_smoke.txt | 1 (approvato) |
 | L5 Validation | test_validation.py | 12 |
+
+## M4 Verification
+| Script | Method A | Method B | Result |
+|--------|----------|----------|--------|
+| `verify/cw_comparison.py` | CW analytical | Hill numerical (solve_ivp) | 7/7 PASS, <0.001% error |
 
 ## Log Sessioni
 - 2026-03-13 (sessione 1): F0+F1 completate. Setup + ricerca dipendenze.
@@ -73,3 +82,5 @@ Nessuno
 - 2026-03-19 (sessione 6): v0.4 Globe Enhanced. 4 frontend features (siblings, conjunction 3D arcs, heatmap mode, time slider) + ConjunctionBrowser panel + backend rewrite (all-on-all SatrecArray vectorized screening, sibling/co-orbiting filters). 50 real unique conjunctions found. 177 test invariati.
 - 2026-03-19 (sessione 7): v0.4.1. Background pre-compute + cache TTL 1h + fix heatmap (fromUrl async). Verifica browser completa di tutte le feature. 199 test.
 - 2026-03-19 (sessione 8): v0.5.1. Extracted vectorized SatrecArray screening into shared module (screen/vectorized.py). fleet/batch.py and api/app.py both delegate to it. 225 test.
+- 2026-03-19 (sessione 9): v0.6.0. Maneuver planning (CW linearized) + historical replay. 8 new files, 29 new tests (254 totali). M4 verification: CW vs Hill 7/7 PASS.
+- 2026-03-19 (sessione 10): v0.6.0 docs. CHANGELOG (v0.4–v0.6), README completo con tutte le feature.

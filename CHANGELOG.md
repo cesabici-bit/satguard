@@ -5,6 +5,84 @@ All notable changes to SatGuard will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-03-19
+
+### Added
+
+- **CW equations**: Clohessy-Wiltshire linearized relative motion (`maneuver/cw.py`) — mean_motion, orbital_period, cw_displacement, sma_from_position, eccentricity_from_state
+- **Maneuver planner**: Tradespace search (dv × time grid) → minimum-fuel recommendation meeting Pc threshold (`maneuver/planner.py`)
+- **Historical replay**: Re-propagate archived TLEs to compute timeline of recomputed miss distance and Pc (`history/replay.py`)
+- **PcSnapshot TLE fields**: Backward-compatible JSON extension storing TLE lines for replay
+- **CLI `satguard maneuver`**: Plan avoidance maneuver for a conjunction pair
+- **CLI `satguard replay`**: Replay historical conjunction from archived TLEs
+- **API `POST /api/maneuver`**: Maneuver planning endpoint
+- **API `GET /api/replay/{a}/{b}`**: Historical replay endpoint
+- **CLI `--record` TLE archiving**: `screen`/`watch` now archive TLE lines in PcSnapshot
+- **M4 verification**: CW analytical vs Hill numerical integration — 7/7 PASS, <0.001% error (`verify/cw_comparison.py`)
+
+### Changed
+
+- Bumped version to 0.6.0
+- Total tests: 254 passed (from 225)
+
+## [0.5.1] - 2026-03-19
+
+### Changed
+
+- **Vectorized screening extraction**: Shared `screen/vectorized.py` module used by both `fleet/batch.py` and `api/app.py`
+- Fleet screening performance: hours → 29 seconds via SatrecArray vectorization
+- Total tests: 225 (unchanged)
+
+## [0.5.0] - 2026-03-19
+
+### Added
+
+- **Fleet batch screening**: Screen entire constellation from `fleet.yaml` config file
+- **FleetConfig parser**: YAML-based constellation definition with per-object thresholds
+- **PDF report generation**: Conjunction summary with risk matrix (`report/pdf.py`, fpdf2)
+- **CLI `satguard fleet`**: Batch screen a constellation
+- **CLI `satguard report`**: Generate PDF report from screening results
+
+### Changed
+
+- Bumped version to 0.5.0
+- Added `fpdf2` and `PyYAML` dependencies
+- Total tests: 225 passed (from 199)
+
+## [0.4.1] - 2026-03-19
+
+### Fixed
+
+- **Heatmap DeveloperError**: Migrated to `SingleTileImageryProvider.fromUrl()` async API (Cesium 1.139 breaking change)
+- 5 bugs found and fixed in v0.4 audit (start_epoch, heatmap color, Pc validation, version, perf)
+
+### Added
+
+- **18 audit tests**: `test_v04_audit.py` covering conjunction sanity, siblings logic, orbit classification, background pre-compute
+
+### Changed
+
+- Background pre-compute for conjunctions on API startup (lifespan event)
+- Cache TTL increased to 1 hour for conjunctions
+- Total tests: 199 passed (from 177)
+
+## [0.4.0] - 2026-03-19
+
+### Added
+
+- **Siblings detection**: Filter co-orbiting objects (same `intl_designator` prefix) from conjunction results
+- **Conjunction 3D arcs**: Glowing polylines between at-risk pairs in globe view
+- **Heatmap mode**: Density overlay showing conjunction hotspots on the globe
+- **Time slider**: Scrub through simulation time with playback controls
+- **ConjunctionBrowser panel**: Browse, sort, and filter all conjunctions in sidebar
+- **All-on-all vectorized screening**: SatrecArray-based screening producing real unique conjunctions
+- **Co-orbiting velocity filter**: Filter out pairs with relative velocity < 0.5 km/s
+
+### Changed
+
+- Bumped version to 0.4.0
+- Total tests: 177 (unchanged, audit added in v0.4.1)
+
 ## [0.3.0] - 2026-03-18
 
 ### Added
