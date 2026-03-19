@@ -1,22 +1,27 @@
 # Status — SatGuard
 
 ## Fase Corrente
-v0.3 — Globe 3D (CesiumJS) — Implementata.
+v0.4 — Globe Enhanced — Implementata.
 
-## Ultimo Subtask Completato
-- S0: Setup progetto (FastAPI backend + React/Vite/Cesium frontend scaffolding)
-- S1: FastAPI /api/catalog endpoint con cache TTL 1h, orbit classification
-- S2: FastAPI /api/conjunctions + /api/objects/{id} endpoints
-- S3: Globe 3D con 30K+ dots (PointPrimitiveCollection + satellite.js client-side propagation)
-- S4: Click-to-inspect (ObjectInspector panel con dettagli orbitali)
-- S5: Conjunction overlay (polyline colorate per Pc)
-- S6: FilterPanel (LEO/MEO/GEO/OTHER checkboxes + search) + TimeControls (play/pause/speed)
-- S7: CLI `satguard serve --port 8000` command
-- check-all: 177 passed, 1 skipped, mypy 0 errors (28 files), ruff 0 errors
+## Ultimo Subtask Completato (v0.4)
+- S0: Esteso types (CatalogEntry.intl_designator, FilterState.showHeatmap)
+- S1: Sibling index utility (buildSiblingIndex, getSiblings)
+- S2: Sibling highlighting nel Globe (celeste, size 8)
+- S3: Siblings list in ObjectInspector (max 20, cliccabili)
+- S4: Conjunction 3D arc view (polyline ±10min TCA, miss distance label)
+- S5: Heatmap continua gaussiana (canvas 1024x512, SingleTileImageryProvider)
+- S6: Time slider (±24h, tick labels, pausa su drag)
+- ConjunctionBrowser: pannello collapsibile con tutte le congiunzioni ordinate per rischio
+- Backend: all-on-all screening con SatrecArray vettorizzato (~2min, cached 10min)
+- Filtri: siblings (intl_designator[:5]) + co-orbiting (vrel < 0.5 km/s)
+- Loading indicator: "Calculating conjunctions..." con tempo
+- check-all: 177 passed, 1 skipped
 - Frontend: TypeScript clean, Vite build OK
 
 ## Prossimo Subtask
-S8: Polish e release (bump version, CHANGELOG, README update, verifica manuale browser)
+- Pre-calcolo congiunzioni all'avvio server (background task)
+- Aumentare TTL cache congiunzioni a 1h
+- v0.5: Constellation batch + fleet.yaml + report PDF
 
 ## Blockers
 Nessuno
@@ -49,12 +54,15 @@ Nessuno
 | Alert Rules | `src/satguard/alert/rules.py` | OK (v0.2) |
 | Webhook | `src/satguard/alert/webhook.py` | OK (v0.2) |
 | CLI | `src/satguard/cli/main.py` | OK |
-| API App | `src/satguard/api/app.py` | OK (v0.3) |
+| API App | `src/satguard/api/app.py` | OK (v0.4) — all-on-all SatrecArray |
 | API Cache | `src/satguard/api/cache.py` | OK (v0.3) |
-| Globe 3D | `web/src/components/Globe.tsx` | OK (v0.3) |
-| ObjectInspector | `web/src/components/ObjectInspector.tsx` | OK (v0.3) |
-| FilterPanel | `web/src/components/FilterPanel.tsx` | OK (v0.3) |
-| TimeControls | `web/src/components/TimeControls.tsx` | OK (v0.3) |
+| Globe 3D | `web/src/components/Globe.tsx` | OK (v0.4) — siblings, arcs, heatmap |
+| ObjectInspector | `web/src/components/ObjectInspector.tsx` | OK (v0.4) — siblings, View 3D |
+| FilterPanel | `web/src/components/FilterPanel.tsx` | OK (v0.4) — heatmap toggle |
+| TimeControls | `web/src/components/TimeControls.tsx` | OK (v0.4) — time slider |
+| ConjunctionBrowser | `web/src/components/ConjunctionBrowser.tsx` | OK (v0.4) |
+| Siblings util | `web/src/utils/siblings.ts` | OK (v0.4) |
+| Heatmap util | `web/src/utils/heatmap.ts` | OK (v0.4) — gaussian canvas |
 
 ## Test Coverage per Livello
 | Livello | File | # Test |
@@ -71,3 +79,4 @@ Nessuno
 - 2026-03-13 (sessione 3): F5 Deploy & Publish. README, LICENSE, CHANGELOG, CI GitHub Actions.
 - 2026-03-18 (sessione 4): v0.2 completa. 8 subtask, 43 nuovi test (161 totali). Cov assessment, history, alerts, CLI watch/history/alert-test.
 - 2026-03-18 (sessione 5): v0.3 Globe 3D. FastAPI backend (3 endpoints), React+CesiumJS frontend (PointPrimitiveCollection 30K+, satellite.js client-side propagation, click-to-inspect, conjunction overlay, filters, time controls). 16 nuovi test (177 totali). CLI `serve` command.
+- 2026-03-19 (sessione 6): v0.4 Globe Enhanced. 4 frontend features (siblings, conjunction 3D arcs, heatmap mode, time slider) + ConjunctionBrowser panel + backend rewrite (all-on-all SatrecArray vectorized screening, sibling/co-orbiting filters). 50 real unique conjunctions found. 177 test invariati.
