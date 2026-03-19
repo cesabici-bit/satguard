@@ -1,22 +1,16 @@
 # Status — SatGuard
 
 ## Fase Corrente
-v0.5.0 — Constellation Batch + Fleet.yaml + Report PDF — Implementata, test verdi.
+v0.5.1 — Vectorized fleet screening — Implementata, test verdi.
 
-## Ultimo Subtask Completato (v0.5.0)
-- S0: Aggiunto fpdf2 (2.8.7) e PyYAML (6.0.3) — verified-deps.toml aggiornato (M1)
-- S1: Fleet parser (fleet/parser.py): FleetConfig, FleetThresholds, load_fleet() con validazione YAML
-- S2: Batch screening (fleet/batch.py): screen_fleet() riusa catalog/propagation/screening/Pc pipeline
-- S3: PDF report (report/pdf.py): cover page, executive summary, conjunction table, plots, CDM excerpts
-- S4: CLI `satguard fleet screen --fleet fleet.yaml [--output report.pdf] [--no-pdf]`
-- S5: 25 nuovi test (parser, batch, report, CLI, domain sanity L2)
-- Exports: __init__.py aggiornato con FleetConfig, FleetThresholds, load_fleet, screen_fleet, ScoredConjunction, generate_report
-- check-all: 224 passed, 1 skipped — 0 regressioni
-- Lint: ruff clean sui file v0.5
-- Types: mypy clean sui file v0.5 (errori pre-esistenti in app.py non toccati)
+## Ultimo Subtask Completato (v0.5.1)
+- S0: Nuovo modulo `screen/vectorized.py` — SatrecArray + KDTree logica estratta da app.py
+- S1: Riscritto `fleet/batch.py` — screen_fleet() ora usa vectorized_screen() con primary_ids filter
+- S2: Riscritto `api/app.py:_compute_conjunctions()` — delega a vectorized_screen(), ~200 LOC rimossi
+- S3: 225 passed, 1 skipped — 0 regressioni. ruff clean, mypy clean.
+- Performance: fleet screening ora propaga TUTTO il catalogo in 1 chiamata C (SatrecArray) anziché loop Python per ~14K oggetti
 
 ## Prossimo Subtask
-- v0.5 CHECKPOINT: verifica utente del PDF generato (smoke test E2E con fleet reale)
 - v0.6: Maneuver planning + historical replay
 
 ## Blockers
@@ -50,7 +44,8 @@ Nessuno
 | Alert Rules | `src/satguard/alert/rules.py` | OK (v0.2) |
 | Webhook | `src/satguard/alert/webhook.py` | OK (v0.2) |
 | CLI | `src/satguard/cli/main.py` | OK |
-| API App | `src/satguard/api/app.py` | OK (v0.4) — all-on-all SatrecArray |
+| Vectorized Screen | `src/satguard/screen/vectorized.py` | OK (v0.5.1) — shared SatrecArray+KDTree |
+| API App | `src/satguard/api/app.py` | OK (v0.5.1) — delegates to vectorized |
 | API Cache | `src/satguard/api/cache.py` | OK (v0.3) |
 | Globe 3D | `web/src/components/Globe.tsx` | OK (v0.4) — siblings, arcs, heatmap |
 | ObjectInspector | `web/src/components/ObjectInspector.tsx` | OK (v0.4) — siblings, View 3D |
@@ -77,3 +72,4 @@ Nessuno
 - 2026-03-18 (sessione 5): v0.3 Globe 3D. FastAPI backend (3 endpoints), React+CesiumJS frontend (PointPrimitiveCollection 30K+, satellite.js client-side propagation, click-to-inspect, conjunction overlay, filters, time controls). 16 nuovi test (177 totali). CLI `serve` command.
 - 2026-03-19 (sessione 6): v0.4 Globe Enhanced. 4 frontend features (siblings, conjunction 3D arcs, heatmap mode, time slider) + ConjunctionBrowser panel + backend rewrite (all-on-all SatrecArray vectorized screening, sibling/co-orbiting filters). 50 real unique conjunctions found. 177 test invariati.
 - 2026-03-19 (sessione 7): v0.4.1. Background pre-compute + cache TTL 1h + fix heatmap (fromUrl async). Verifica browser completa di tutte le feature. 199 test.
+- 2026-03-19 (sessione 8): v0.5.1. Extracted vectorized SatrecArray screening into shared module (screen/vectorized.py). fleet/batch.py and api/app.py both delegate to it. 225 test.

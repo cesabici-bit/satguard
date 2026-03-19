@@ -221,15 +221,12 @@ class TestBatchScreening:
             thresholds=FleetThresholds(pc=0, miss_km=100, days=1),
         )
 
-        # Mock catalog that doesn't contain the object
+        # Mock catalog with no TLEs (object not in catalog)
         mock_catalog = MagicMock()
         mock_catalog.__len__ = MagicMock(return_value=0)
-        mock_catalog.__iter__ = MagicMock(return_value=iter([]))
-        mock_catalog.get_by_norad = MagicMock(side_effect=KeyError("Not found"))
+        mock_catalog.tles = []
 
-        with patch("satguard.fleet.batch.fetch_tle_by_norad", new_callable=AsyncMock) as mock_fetch:
-            mock_fetch.side_effect = Exception("Not found")
-            results = asyncio.run(screen_fleet(config, catalog=mock_catalog))
+        results = asyncio.run(screen_fleet(config, catalog=mock_catalog))
         assert results == []
 
 

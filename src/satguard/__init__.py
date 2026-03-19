@@ -1,6 +1,6 @@
 """SatGuard — Open-source conjunction assessment pipeline."""
 
-__version__ = "0.5.0"
+__version__ = "0.5.1"
 
 from satguard.alert.rules import AlertConfig, load_config, should_alert
 from satguard.alert.webhook import send_alert
@@ -17,7 +17,8 @@ from satguard.covariance.realism import (
     default_covariance,
     scale_covariance,
 )
-from satguard.fleet.batch import ScoredConjunction, screen_fleet
+from satguard.fleet.batch import screen_fleet
+from satguard.screen.vectorized import ScoredConjunction
 from satguard.fleet.parser import FleetConfig, FleetThresholds, load_fleet
 from satguard.history.evolution import PcTrend, TrendDirection, pc_trend, time_to_threshold
 from satguard.history.store import ConjunctionHistory, HistoryStore, PcSnapshot

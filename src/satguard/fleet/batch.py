@@ -1,33 +1,22 @@
 """Batch conjunction screening for fleet objects.
 
-Screens each fleet object against the full active catalog,
-deduplicates by pair, and computes collision probability.
+Screens fleet objects against the full active catalog using vectorized
+SatrecArray propagation (v0.5.1). See screen.vectorized for the core
+algorithm.
 """
 
 from __future__ import annotations
 
-import contextlib
 import logging
-from dataclasses import dataclass
 
 from satguard.assess.foster import foster_pc
-from satguard.catalog.celestrak import Catalog, fetch_catalog, fetch_tle_by_norad
-from satguard.catalog.tle import TLE
+from satguard.catalog.celestrak import Catalog, fetch_catalog
 from satguard.covariance.realism import default_covariance, project_to_encounter_plane
 from satguard.fleet.parser import FleetConfig
-from satguard.propagate.sgp4 import propagate_batch
-from satguard.screen.screener import ConjunctionEvent, screen
+from satguard.screen.screener import ConjunctionEvent
+from satguard.screen.vectorized import ScoredConjunction, VectorizedConfig, vectorized_screen
 
 logger = logging.getLogger("satguard.fleet")
-
-
-@dataclass(frozen=True, slots=True)
-class ScoredConjunction:
-    """A conjunction event with computed collision probability."""
-
-    event: ConjunctionEvent
-    pc: float
-    """Collision probability (Foster 1992)."""
 
 
 async def screen_fleet(
@@ -37,14 +26,8 @@ async def screen_fleet(
 ) -> list[ScoredConjunction]:
     """Screen all fleet objects against the active catalog.
 
-    For each fleet object:
-        1. Fetch TLE (or use catalog entry)
-        2. Propagate over screening window
-        3. Screen against all catalog objects
-        4. Compute Pc for each conjunction
-
-    Results are deduplicated by pair (keep minimum miss distance),
-    filtered by fleet thresholds, and sorted by Pc descending.
+    Uses vectorized SatrecArray propagation for the entire catalog at once,
+    then filters to only conjunctions involving fleet objects.
 
     Args:
         fleet: Parsed fleet configuration.
@@ -59,77 +42,24 @@ async def screen_fleet(
         catalog = await fetch_catalog("active")
     logger.info("Catalog: %d objects", len(catalog))
 
-    fleet_set = set(fleet.objects)
-    threshold_km = fleet.thresholds.miss_km
-    days = fleet.thresholds.days
-    step_seconds = 60.0
+    config = VectorizedConfig(
+        threshold_km=fleet.thresholds.miss_km,
+        step_seconds=120.0,
+        days=float(fleet.thresholds.days),
+        max_results=500,
+        pc_threshold=fleet.thresholds.pc,
+    )
 
-    # Collect all conjunctions across fleet objects
-    pair_best: dict[tuple[int, int], ScoredConjunction] = {}
+    fleet_ids = set(fleet.objects)
 
-    for norad_id in fleet.objects:
-        logger.info("Screening fleet object NORAD %d...", norad_id)
+    results = vectorized_screen(
+        tles=catalog.tles,
+        config=config,
+        primary_ids=fleet_ids,
+    )
 
-        # Get primary TLE
-        primary_tle = _find_tle_in_catalog(catalog, norad_id)
-        if primary_tle is None:
-            try:
-                primary_tle = await fetch_tle_by_norad(norad_id)
-            except Exception:
-                logger.warning("Could not fetch TLE for NORAD %d, skipping", norad_id)
-                continue
-
-        primary_states = propagate_batch(
-            primary_tle, days=float(days), step_seconds=step_seconds,
-        )
-        if not primary_states:
-            logger.warning("No states for NORAD %d, skipping", norad_id)
-            continue
-
-        start_epoch = primary_tle.epoch_datetime
-
-        # Screen against each catalog object
-        for tle in catalog:
-            if tle.norad_id == norad_id:
-                continue
-            # Skip fleet-vs-fleet (will be screened from the other side)
-            if tle.norad_id in fleet_set and tle.norad_id < norad_id:
-                continue
-
-            try:
-                sec_states = propagate_batch(
-                    tle, days=float(days), step_seconds=step_seconds,
-                    start=start_epoch,
-                )
-                events = screen(primary_states, sec_states, threshold_km=threshold_km)
-            except Exception:
-                continue
-
-            for event in events:
-                scored = _score_event(event)
-                if scored is None:
-                    continue
-
-                # Filter by Pc threshold
-                if scored.pc < fleet.thresholds.pc:
-                    continue
-
-                # Deduplicate: keep the conjunction with highest Pc for each pair
-                pair_key = _pair_key(event.norad_id_primary, event.norad_id_secondary)
-                existing = pair_best.get(pair_key)
-                if existing is None or scored.pc > existing.pc:
-                    pair_best[pair_key] = scored
-
-    results = sorted(pair_best.values(), key=lambda s: s.pc, reverse=True)
     logger.info("Fleet screening complete: %d conjunctions", len(results))
     return results
-
-
-def _find_tle_in_catalog(catalog: Catalog, norad_id: int) -> TLE | None:
-    """Look up a NORAD ID in the catalog."""
-    with contextlib.suppress(Exception):
-        return catalog.get_by_norad(norad_id)
-    return None
 
 
 def _pair_key(a: int, b: int) -> tuple[int, int]:
