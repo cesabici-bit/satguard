@@ -4,7 +4,7 @@
  * Minimal bar design inspired by KeepTrack.space time controls.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { TimeState } from "../types";
 
 interface Props {
@@ -13,9 +13,12 @@ interface Props {
 }
 
 const SPEEDS = [1, 10, 60, 600];
+const SLIDER_RANGE_MIN = 1440; // ±24h in minutes
 
 export default function TimeControls({ timeState, onChange }: Props) {
   const [displayTime, setDisplayTime] = useState(new Date());
+  const anchorTimeRef = useRef<number>(Date.now());
+  const [sliderValue, setSliderValue] = useState(0);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -45,6 +48,19 @@ export default function TimeControls({ timeState, onChange }: Props) {
     boxShadow: "0 0 8px rgba(94, 207, 255, 0.15)",
   };
 
+  const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = parseInt(e.target.value, 10);
+    setSliderValue(val);
+    const newTime = new Date(anchorTimeRef.current + val * 60 * 1000);
+    onChange({ ...timeState, simulationTime: newTime, playing: false });
+  };
+
+  const handleNow = () => {
+    anchorTimeRef.current = Date.now();
+    setSliderValue(0);
+    onChange({ ...timeState, simulationTime: new Date(), playing: true, speedMultiplier: 1 });
+  };
+
   return (
     <div className="glass-panel" style={{
       position: "absolute",
@@ -54,9 +70,43 @@ export default function TimeControls({ timeState, onChange }: Props) {
       padding: "8px 14px",
       zIndex: 200,
       display: "flex",
+      flexDirection: "column",
       alignItems: "center",
-      gap: 8,
+      gap: 6,
     }}>
+      {/* Time slider */}
+      <div style={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "center" }}>
+        <input
+          type="range"
+          min={-SLIDER_RANGE_MIN}
+          max={SLIDER_RANGE_MIN}
+          value={sliderValue}
+          onChange={handleSliderChange}
+          style={{
+            width: "100%",
+            height: 4,
+            cursor: "pointer",
+            accentColor: "#00e5ff",
+          }}
+        />
+        <div style={{
+          display: "flex",
+          justifyContent: "space-between",
+          width: "100%",
+          fontSize: 8,
+          color: "rgba(200,214,229,0.35)",
+          fontFamily: "monospace",
+          marginTop: 2,
+        }}>
+          <span>-24h</span>
+          <span>-12h</span>
+          <span>0</span>
+          <span>+12h</span>
+          <span>+24h</span>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
       {/* Play/Pause */}
       <button
         style={timeState.playing ? btnActive : btnBase}
@@ -106,18 +156,12 @@ export default function TimeControls({ timeState, onChange }: Props) {
       {/* NOW button */}
       <button
         style={btnBase}
-        onClick={() =>
-          onChange({
-            ...timeState,
-            simulationTime: new Date(),
-            playing: true,
-            speedMultiplier: 1,
-          })
-        }
+        onClick={handleNow}
         title="Reset to current time"
       >
         NOW
       </button>
+      </div>
     </div>
   );
 }

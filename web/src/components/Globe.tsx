@@ -28,6 +28,8 @@ import {
   ScreenSpaceEventType,
   CallbackProperty,
   defined,
+  Rectangle,
+  ColorMaterialProperty,
 } from "cesium";
 import type { CatalogEntry, Conjunction, FilterState, TimeState } from "../types";
 import {
@@ -36,6 +38,7 @@ import {
   eciToGeodetic,
   gstime,
 } from "satellite.js";
+import { renderHeatmapCanvas } from "../utils/heatmap";
 
 // --- Visual constants ---
 
@@ -69,6 +72,8 @@ const TYPE_SIZES: Record<string, number> = {
 
 const SELECTED_SIZE = 14;
 const SELECTED_COLOR = new Color(1.0, 1.0, 1.0, 1.0);
+const SIBLING_SIZE = 8;
+const SIBLING_COLOR = new Color(0.4, 0.9, 1.0, 1.0); // Celeste
 
 /** Scale: zoomed in = bigger, zoomed out = slightly smaller (not tiny) */
 const SCALE_BY_DISTANCE = new NearFarScalar(5.0e5, 2.5, 2.0e7, 0.7);
@@ -97,11 +102,13 @@ interface Props {
   filters: FilterState;
   timeState: TimeState;
   selectedId: number | null;
+  siblingIds: number[];
+  activeConjunction: Conjunction | null;
   onSelectObject: (noradId: number) => void;
 }
 
 const Globe = forwardRef<GlobeHandle, Props>(function Globe(
-  { catalog, conjunctions, filters, timeState, selectedId, onSelectObject },
+  { catalog, conjunctions, filters, timeState, selectedId, siblingIds, activeConjunction, onSelectObject },
   ref
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -116,6 +123,9 @@ const Globe = forwardRef<GlobeHandle, Props>(function Globe(
   const selectedIndexRef = useRef<number>(-1);
   const prevSelectedSizeRef = useRef<number>(3);
   const prevSelectedColorRef = useRef<Color>(Color.WHITE);
+  const siblingIndicesRef = useRef<{ idx: number; origSize: number; origColor: Color }[]>([]);
+  const arcEntitiesRef = useRef<Cesium.Entity[]>([]);
+  const heatmapLayerRef = useRef<Cesium.ImageryLayer | null>(null);
 
   // --- flyToObject: find point index, fly camera there ---
   const flyToObject = (noradId: number) => {
@@ -189,6 +199,41 @@ const Globe = forwardRef<GlobeHandle, Props>(function Globe(
     }
     selectedIndexRef.current = idx;
   }, [selectedId]);
+
+  // --- Highlight sibling points ---
+  useEffect(() => {
+    const points = pointsRef.current;
+    const entries = catalogRef.current;
+    if (!points || entries.length === 0) return;
+
+    // Restore previous siblings
+    for (const sib of siblingIndicesRef.current) {
+      if (sib.idx >= 0 && sib.idx < entries.length) {
+        const pt = points.get(sib.idx);
+        if (pt) {
+          pt.pixelSize = sib.origSize;
+          pt.color = sib.origColor;
+        }
+      }
+    }
+    siblingIndicesRef.current = [];
+
+    if (siblingIds.length === 0) return;
+
+    // Build norad→index map from catalog
+    const saved: typeof siblingIndicesRef.current = [];
+    for (let i = 0; i < entries.length; i++) {
+      if (siblingIds.includes(entries[i].norad_id)) {
+        const pt = points.get(i);
+        if (pt) {
+          saved.push({ idx: i, origSize: pt.pixelSize, origColor: pt.color });
+          pt.pixelSize = SIBLING_SIZE;
+          pt.color = SIBLING_COLOR;
+        }
+      }
+    }
+    siblingIndicesRef.current = saved;
+  }, [siblingIds]);
 
   // Initialize Cesium viewer once
   useEffect(() => {
@@ -391,6 +436,28 @@ const Globe = forwardRef<GlobeHandle, Props>(function Globe(
           geo.height * 1000
         );
         point.show = true;
+
+        // In heatmap mode, dim all satellites to 15% opacity
+        if (filters.showHeatmap) {
+          point.color = Color.fromAlpha(
+            TYPE_COLORS[entry.object_type] ?? TYPE_COLORS.OTHER,
+            0.15,
+          );
+          point.pixelSize = 1.5;
+        } else {
+          // Restore normal appearance (skip selected & sibling points)
+          const isSelected = i === selectedIndexRef.current;
+          const isSibling = siblingIndicesRef.current.some((s) => s.idx === i);
+          if (!isSelected && !isSibling) {
+            const origColor = TYPE_COLORS[entry.object_type] ?? TYPE_COLORS.OTHER;
+            const origSize = TYPE_SIZES[entry.object_type] ?? 3;
+            if (point.color.alpha < 0.5) {
+              // Was dimmed, restore
+              point.color = origColor;
+              point.pixelSize = origSize;
+            }
+          }
+        }
       }
 
       timeState.simulationTime = simDate;
@@ -410,8 +477,14 @@ const Globe = forwardRef<GlobeHandle, Props>(function Globe(
     const viewer = viewerRef.current;
     if (!viewer) return;
 
-    viewer.entities.removeAll();
-    if (conjunctions.length === 0) return;
+    // Remove only conjunction-line entities (not arcs or heatmap)
+    const toRemove: Cesium.Entity[] = [];
+    viewer.entities.values.forEach((e) => {
+      if ((e as any)._satguardType === "conjLine") toRemove.push(e);
+    });
+    toRemove.forEach((e) => viewer.entities.remove(e));
+
+    if (conjunctions.length === 0 || filters.showHeatmap) return;
 
     const idToIndex = new Map<number, number>();
     catalogRef.current.forEach((entry, i) => {
@@ -425,7 +498,7 @@ const Globe = forwardRef<GlobeHandle, Props>(function Globe(
       if (!pointsRef.current) continue;
 
       const color = conjunctionColor(conj.pc);
-      viewer.entities.add({
+      const entity = viewer.entities.add({
         polyline: {
           positions: new CallbackProperty(() => {
             const pt1 = pointsRef.current?.get(i1!);
@@ -441,8 +514,193 @@ const Globe = forwardRef<GlobeHandle, Props>(function Globe(
           }),
         },
       });
+      (entity as any)._satguardType = "conjLine";
     }
-  }, [conjunctions, catalog]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [conjunctions, catalog, filters.showHeatmap]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // --- Conjunction 3D arc view ---
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer) return;
+
+    // Clear previous arc entities
+    for (const e of arcEntitiesRef.current) {
+      viewer.entities.remove(e);
+    }
+    arcEntitiesRef.current = [];
+
+    if (!activeConjunction) return;
+
+    const satrecs = satrecsRef.current;
+    const entries = catalogRef.current;
+
+    // Find satrecs for both objects
+    const idx1 = entries.findIndex((e) => e.norad_id === activeConjunction.norad_id_primary);
+    const idx2 = entries.findIndex((e) => e.norad_id === activeConjunction.norad_id_secondary);
+    if (idx1 === -1 || idx2 === -1) return;
+
+    const satrec1 = satrecs[idx1];
+    const satrec2 = satrecs[idx2];
+    const tcaMs = new Date(activeConjunction.tca).getTime();
+
+    // Propagate ±10 min at 30s steps = 40 points each
+    const HALF_WINDOW = 10 * 60 * 1000; // 10 min in ms
+    const STEP = 30 * 1000; // 30s in ms
+    const positions1: Cartesian3[] = [];
+    const positions2: Cartesian3[] = [];
+    let tcaPos1: Cartesian3 | null = null;
+    let tcaPos2: Cartesian3 | null = null;
+
+    for (let t = tcaMs - HALF_WINDOW; t <= tcaMs + HALF_WINDOW; t += STEP) {
+      const date = new Date(t);
+      const gmst = gstime(date);
+
+      const pv1 = propagate(satrec1, date);
+      if (typeof pv1.position !== "boolean" && pv1.position) {
+        const geo1 = eciToGeodetic(pv1.position, gmst);
+        const cart1 = Cartesian3.fromRadians(geo1.longitude, geo1.latitude, geo1.height * 1000);
+        positions1.push(cart1);
+        if (t === tcaMs || (tcaPos1 === null && t >= tcaMs)) tcaPos1 = cart1;
+      }
+
+      const pv2 = propagate(satrec2, date);
+      if (typeof pv2.position !== "boolean" && pv2.position) {
+        const geo2 = eciToGeodetic(pv2.position, gmst);
+        const cart2 = Cartesian3.fromRadians(geo2.longitude, geo2.latitude, geo2.height * 1000);
+        positions2.push(cart2);
+        if (t === tcaMs || (tcaPos2 === null && t >= tcaMs)) tcaPos2 = cart2;
+      }
+    }
+
+    // Primary arc (green)
+    if (positions1.length > 1) {
+      const e = viewer.entities.add({
+        polyline: {
+          positions: positions1,
+          width: 3,
+          material: new Cesium.PolylineGlowMaterialProperty({
+            glowPower: 0.3,
+            color: Color.LIME,
+          }),
+        },
+      });
+      (e as any)._satguardType = "arc";
+      arcEntitiesRef.current.push(e);
+    }
+
+    // Secondary arc (orange)
+    if (positions2.length > 1) {
+      const e = viewer.entities.add({
+        polyline: {
+          positions: positions2,
+          width: 3,
+          material: new Cesium.PolylineGlowMaterialProperty({
+            glowPower: 0.3,
+            color: Color.ORANGE,
+          }),
+        },
+      });
+      (e as any)._satguardType = "arc";
+      arcEntitiesRef.current.push(e);
+    }
+
+    // Miss distance line (white thin)
+    if (tcaPos1 && tcaPos2) {
+      const missLine = viewer.entities.add({
+        polyline: {
+          positions: [tcaPos1, tcaPos2],
+          width: 1.5,
+          material: new ColorMaterialProperty(new Color(1, 1, 1, 0.6)),
+        },
+      });
+      (missLine as any)._satguardType = "arc";
+      arcEntitiesRef.current.push(missLine);
+
+      // Label at midpoint
+      const mid = Cartesian3.midpoint(tcaPos1, tcaPos2, new Cartesian3());
+      const label = viewer.entities.add({
+        position: mid,
+        label: {
+          text: `Miss: ${activeConjunction.miss_distance_km.toFixed(2)} km`,
+          font: "12px monospace",
+          fillColor: Color.WHITE,
+          outlineColor: Color.BLACK,
+          outlineWidth: 2,
+          style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+          pixelOffset: new Cartesian2(0, -16),
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+      });
+      (label as any)._satguardType = "arc";
+      arcEntitiesRef.current.push(label);
+
+      // Fly to midpoint
+      lastInteractionRef.current = Date.now();
+      const carto = Cesium.Cartographic.fromCartesian(mid);
+      viewer.camera.flyTo({
+        destination: Cartesian3.fromRadians(
+          carto.longitude,
+          carto.latitude - 0.03,
+          carto.height + 1_500_000,
+        ),
+        duration: 1.5,
+      });
+    }
+  }, [activeConjunction]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // --- Heatmap mode: continuous gaussian imagery layer ---
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer) return;
+
+    // Remove previous heatmap layer
+    if (heatmapLayerRef.current) {
+      viewer.imageryLayers.remove(heatmapLayerRef.current, true);
+      heatmapLayerRef.current = null;
+    }
+
+    // Dim/restore satellite points in heatmap mode
+    const points = pointsRef.current;
+    if (points) {
+      // We control visibility via translucency — heatmap mode makes all points very faint
+      // This is handled in the animation loop via filters.showHeatmap
+    }
+
+    if (!filters.showHeatmap || conjunctions.length === 0) return;
+
+    // Build satrec lookup
+    const satrecByNorad = new Map<number, ReturnType<typeof twoline2satrec>>();
+    const entries = catalogRef.current;
+    const satrecs = satrecsRef.current;
+    for (let i = 0; i < entries.length; i++) {
+      satrecByNorad.set(entries[i].norad_id, satrecs[i]);
+    }
+
+    const canvas = renderHeatmapCanvas(conjunctions, satrecByNorad);
+    if (!canvas) return;
+
+    // Convert canvas to blob URL for imagery provider
+    canvas.toBlob((blob) => {
+      if (!blob || !viewerRef.current) return;
+      const url = URL.createObjectURL(blob);
+
+      const provider = new Cesium.SingleTileImageryProvider({
+        url,
+        rectangle: Rectangle.fromDegrees(-180, -90, 180, 90),
+      });
+
+      const layer = viewerRef.current.imageryLayers.addImageryProvider(provider);
+      layer.alpha = 0.85;
+      heatmapLayerRef.current = layer;
+
+      // Clean up blob URL when layer is removed
+      const origDestroy = layer.destroy.bind(layer);
+      layer.destroy = () => {
+        URL.revokeObjectURL(url);
+        return origDestroy();
+      };
+    }, "image/png");
+  }, [filters.showHeatmap, conjunctions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div

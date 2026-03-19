@@ -100,6 +100,53 @@ export default function FilterPanel({ filters, onChange, onSearchSubmit }: Props
         );
       })}
 
+      {/* Heatmap toggle */}
+      <label style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "5px 0",
+        marginTop: 6,
+        cursor: "pointer",
+        opacity: filters.showHeatmap ? 1 : 0.4,
+        transition: "opacity 0.2s",
+        fontSize: 12,
+        borderTop: "1px solid rgba(255,255,255,0.06)",
+        paddingTop: 8,
+      }}>
+        <input
+          type="checkbox"
+          checked={filters.showHeatmap}
+          onChange={() => onChange({ ...filters, showHeatmap: !filters.showHeatmap })}
+          style={{ display: "none" }}
+        />
+        <span style={{
+          width: 14,
+          height: 14,
+          borderRadius: 3,
+          border: `1.5px solid ${filters.showHeatmap ? "#ff6633" : "rgba(255,255,255,0.15)"}`,
+          background: filters.showHeatmap ? "#ff663322" : "transparent",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          transition: "all 0.2s",
+          flexShrink: 0,
+        }}>
+          {filters.showHeatmap && (
+            <span style={{
+              width: 6,
+              height: 6,
+              borderRadius: 1,
+              background: "#ff6633",
+              boxShadow: "0 0 6px #ff6633",
+            }} />
+          )}
+        </span>
+        <span style={{ color: filters.showHeatmap ? "#c8d6e5" : "#555" }}>
+          Heatmap  ·  Conjunction density
+        </span>
+      </label>
+
       <div style={{ position: "relative", marginTop: 10 }}>
         <input
           type="text"

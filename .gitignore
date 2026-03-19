@@ -13,3 +13,5 @@ build/
 .venv/
 env/
 venv/
+node_modules/
+web/dist/

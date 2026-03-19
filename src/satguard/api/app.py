@@ -139,9 +139,20 @@ async def get_catalog() -> list[dict[str, Any]]:
 
 @app.get("/api/conjunctions")
 async def get_conjunctions() -> list[dict[str, Any]]:
-    """Return top 50 conjunctions (pre-computed for ISS / first catalog object).
+    """Return top 50 conjunctions via all-on-all vectorized screening.
 
-    Uses the existing SatGuard screening pipeline with default covariance.
+    Approach:
+        1. Propagate ALL catalog objects using sgp4 SatrecArray (vectorized C)
+           at fine time steps (120s over 3 days = 2160 steps)
+        2. At each time step, KDTree finds all pairs within threshold
+        3. Filter: same-launch siblings + co-orbiting (rel_vel < 0.5 km/s)
+        4. Deduplicate by pair, keep closest approach
+        5. Compute Pc for top 50
+
+    Performance: SatrecArray propagates all ~10K objects at all 2160 epochs
+    in a single vectorized C call (~2-5 seconds), then KDTree per epoch.
+    Total: ~30-60 seconds.
+
     Results are cached for 10 minutes.
     """
     cached = cache.get("conjunctions")
@@ -154,68 +165,195 @@ async def get_conjunctions() -> list[dict[str, Any]]:
             return cached
 
         import contextlib
+        import logging
+        from datetime import timedelta
+
+        import numpy as np
+        from scipy.spatial import KDTree as KDTreeScipy
+        from sgp4.api import Satrec, SatrecArray, WGS72
 
         from satguard.assess.foster import foster_pc
-        from satguard.catalog.celestrak import fetch_catalog, fetch_tle_by_norad
+        from satguard.catalog.celestrak import fetch_catalog
         from satguard.covariance.realism import default_covariance, project_to_encounter_plane
-        from satguard.propagate.sgp4 import propagate_batch
-        from satguard.screen.screener import screen
+        from satguard.propagate.sgp4 import _jd_from_datetime
 
-        # Try ISS first, fallback to first catalog object
-        primary_norad = 25544
-        try:
-            primary_tle = await fetch_tle_by_norad(primary_norad)
-        except Exception:
-            catalog = await fetch_catalog("active")
-            if not catalog.tles:
-                cache.set("conjunctions", [], CONJUNCTIONS_TTL)
-                return []
-            primary_tle = catalog.tles[0]
-            primary_norad = primary_tle.norad_id
+        logger = logging.getLogger("satguard.api")
 
-        # Propagate primary 3 days, 120s steps (coarser for speed)
-        primary_states = propagate_batch(primary_tle, days=3, step_seconds=120)
-
-        # Screen against catalog subset (first 2000 for speed)
         catalog = await fetch_catalog("active")
-        all_events = []
-        for tle in list(catalog)[:2000]:
-            if tle.norad_id == primary_norad:
-                continue
+        tles = catalog.tles
+        if not tles:
+            cache.set("conjunctions", [], CONJUNCTIONS_TTL)
+            return []
+
+        # Build launch-group index for sibling filtering
+        launch_prefix: dict[int, str] = {}
+        norad_ids: list[int] = []
+        mean_motions: list[float] = []
+        satrecs: list[Satrec] = []
+        valid_tles = []
+
+        for tle in tles:
             try:
-                sec_states = propagate_batch(
-                    tle, days=3, step_seconds=120,
-                    start=primary_tle.epoch_datetime,
+                sat = Satrec.twoline2rv(tle.line1, tle.line2, WGS72)
+                if sat.error != 0:
+                    continue
+                satrecs.append(sat)
+                valid_tles.append(tle)
+                norad_ids.append(tle.norad_id)
+                mean_motions.append(tle.mean_motion)
+                launch_prefix[tle.norad_id] = (
+                    tle.intl_designator[:5] if tle.intl_designator else ""
                 )
-                events = screen(primary_states, sec_states, threshold_km=50)
-                all_events.extend(events)
             except Exception:
                 continue
 
-        all_events.sort(key=lambda e: e.miss_distance_km)
+        n_sats = len(satrecs)
+        if n_sats < 2:
+            cache.set("conjunctions", [], CONJUNCTIONS_TTL)
+            return []
+
+        logger.info("Propagating %d objects with SatrecArray...", n_sats)
+
+        # Build epoch array: 3 days, 120s steps
+        start_epoch = valid_tles[0].epoch_datetime
+        step_sec = 120.0
+        n_steps = int(3 * 86400 / step_sec) + 1
+
+        jd_arr = np.empty(n_steps)
+        fr_arr = np.empty(n_steps)
+        epoch_dts = []
+        for i in range(n_steps):
+            t = start_epoch + timedelta(seconds=i * step_sec)
+            jd, fr = _jd_from_datetime(t)
+            jd_arr[i] = jd
+            fr_arr[i] = fr
+            epoch_dts.append(t)
+
+        # Vectorized propagation: all sats × all epochs in one C call
+        sat_array = SatrecArray(satrecs)
+        errors, positions, velocities = sat_array.sgp4(jd_arr, fr_arr)
+        # positions shape: (n_sats, n_steps, 3)  in km
+        # velocities shape: (n_sats, n_steps, 3) in km/s
+
+        logger.info("Propagation done. Screening %d steps...", n_steps)
+
+        # Build validity mask: True where propagation succeeded
+        valid_mask = (errors == 0)  # shape: (n_sats, n_steps)
+
+        # Screen at each time step using KDTree
+        threshold_km = 25.0
+        norad_arr = np.array(norad_ids)
+
+        # Collect best per pair: (min_id, max_id) → (dist, step_idx, idx_a, idx_b)
+        pair_best: dict[tuple[int, int], tuple[float, int, int, int]] = {}
+
+        for step in range(n_steps):
+            # Get valid satellites at this step
+            step_valid = valid_mask[:, step]
+            n_valid = int(np.sum(step_valid))
+            if n_valid < 2:
+                continue
+
+            valid_indices = np.where(step_valid)[0]
+            pos_step = positions[valid_indices, step, :]  # (n_valid, 3)
+
+            # Check for NaN positions (sgp4 can return NaN even with error=0)
+            finite_mask = np.all(np.isfinite(pos_step), axis=1)
+            if not np.all(finite_mask):
+                valid_indices = valid_indices[finite_mask]
+                pos_step = pos_step[finite_mask]
+                if len(valid_indices) < 2:
+                    continue
+
+            tree = KDTreeScipy(pos_step)
+            raw_pairs = tree.query_pairs(threshold_km)
+
+            for li, ri in raw_pairs:
+                gi = valid_indices[li]  # global index into satrecs/norad_ids
+                gj = valid_indices[ri]
+
+                nid_a = norad_ids[gi]
+                nid_b = norad_ids[gj]
+
+                # Skip same-launch siblings
+                lp_a = launch_prefix.get(nid_a, "")
+                lp_b = launch_prefix.get(nid_b, "")
+                if lp_a and lp_b and lp_a == lp_b:
+                    continue
+
+                dist = float(np.linalg.norm(pos_step[li] - pos_step[ri]))
+                pair_key = (min(nid_a, nid_b), max(nid_a, nid_b))
+
+                if pair_key not in pair_best or dist < pair_best[pair_key][0]:
+                    pair_best[pair_key] = (dist, step, int(gi), int(gj))
+
+        logger.info("Found %d unique candidate pairs", len(pair_best))
+
+        # Filter and refine top candidates
+        candidates = sorted(pair_best.values(), key=lambda x: x[0])[:200]
 
         results = []
-        for event in all_events[:50]:
+        for dist, step, gi, gj in candidates:
+            # Refine TCA: search ±10 steps (±20 min) at this resolution
+            best_dist = dist
+            best_step = step
+            window = 10
+            s_start = max(0, step - window)
+            s_end = min(n_steps, step + window + 1)
+
+            for s in range(s_start, s_end):
+                if errors[gi, s] != 0 or errors[gj, s] != 0:
+                    continue
+                p_a = positions[gi, s]
+                p_b = positions[gj, s]
+                if not (np.all(np.isfinite(p_a)) and np.all(np.isfinite(p_b))):
+                    continue
+                d = float(np.linalg.norm(p_a - p_b))
+                if d < best_dist:
+                    best_dist = d
+                    best_step = s
+
+            # Get state vectors at refined TCA
+            r_a = positions[gi, best_step]
+            r_b = positions[gj, best_step]
+            v_a = velocities[gi, best_step]
+            v_b = velocities[gj, best_step]
+            rel_vel = float(np.linalg.norm(v_a - v_b))
+
+            # Filter co-orbiting objects
+            if rel_vel < 0.5 or best_dist < 0.01:
+                continue
+
+            nid_a = norad_ids[gi]
+            nid_b = norad_ids[gj]
+            tca = epoch_dts[best_step]
+
+            # Compute Pc
             pc = float("nan")
             with contextlib.suppress(Exception):
-                cov_p = default_covariance("LEO")
-                cov_s = default_covariance("LEO")
+                orbit_a = classify_orbit(mean_motions[gi])
+                orbit_b = classify_orbit(mean_motions[gj])
+                cov_p = default_covariance(orbit_a)
+                cov_s = default_covariance(orbit_b)
                 cov_2d = project_to_encounter_plane(
-                    cov_p, cov_s,
-                    event.r_primary, event.v_primary,
-                    event.r_secondary, event.v_secondary,
+                    cov_p, cov_s, r_a, v_a, r_b, v_b,
                 )
-                pc = foster_pc(event.miss_distance_km, cov_2d, hard_body_radius=0.02)
+                pc = foster_pc(best_dist, cov_2d, hard_body_radius=0.02)
 
             results.append({
-                "norad_id_primary": event.norad_id_primary,
-                "norad_id_secondary": event.norad_id_secondary,
-                "tca": event.tca.isoformat(),
-                "miss_distance_km": round(event.miss_distance_km, 4),
-                "relative_velocity_km_s": round(event.relative_velocity_km_s, 3),
+                "norad_id_primary": nid_a,
+                "norad_id_secondary": nid_b,
+                "tca": tca.isoformat(),
+                "miss_distance_km": round(best_dist, 4),
+                "relative_velocity_km_s": round(rel_vel, 3),
                 "pc": pc if not math.isnan(pc) else None,
             })
 
+            if len(results) >= 50:
+                break
+
+        results.sort(key=lambda r: r["miss_distance_km"])
+        logger.info("Found %d conjunctions after filtering", len(results))
         cache.set("conjunctions", results, CONJUNCTIONS_TTL)
         return results
 

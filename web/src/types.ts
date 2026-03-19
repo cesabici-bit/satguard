@@ -5,6 +5,7 @@ export interface CatalogEntry {
   line1: string;
   line2: string;
   object_type: "LEO" | "MEO" | "GEO" | "OTHER";
+  intl_designator: string;
 }
 
 /** A conjunction event from the API */
@@ -43,6 +44,7 @@ export interface FilterState {
   showMEO: boolean;
   showGEO: boolean;
   showOTHER: boolean;
+  showHeatmap: boolean;
   searchText: string;
 }
 

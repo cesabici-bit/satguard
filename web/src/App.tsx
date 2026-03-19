@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CatalogEntry, Conjunction, FilterState, TimeState } from "./types";
 import Globe from "./components/Globe";
 import type { GlobeHandle } from "./components/Globe";
 import ObjectInspector from "./components/ObjectInspector";
 import FilterPanel from "./components/FilterPanel";
+import ConjunctionBrowser from "./components/ConjunctionBrowser";
 import TimeControls from "./components/TimeControls";
+import { buildSiblingIndex, getSiblings } from "./utils/siblings";
 import "cesium/Build/Cesium/Widgets/widgets.css";
 import "./App.css";
 
@@ -14,6 +16,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [activeConjunction, setActiveConjunction] = useState<Conjunction | null>(null);
   const globeRef = useRef<GlobeHandle>(null);
 
   const [filters, setFilters] = useState<FilterState>({
@@ -21,8 +24,23 @@ export default function App() {
     showMEO: true,
     showGEO: true,
     showOTHER: true,
+    showHeatmap: false,
     searchText: "",
   });
+
+  // Build sibling index once when catalog loads
+  const siblingIndex = useMemo(() => buildSiblingIndex(catalog), [catalog]);
+
+  // Compute sibling IDs for selected object
+  const selectedEntry = useMemo(
+    () => catalog.find((e) => e.norad_id === selectedId),
+    [catalog, selectedId],
+  );
+  const siblings = useMemo(
+    () => getSiblings(siblingIndex, selectedEntry),
+    [siblingIndex, selectedEntry],
+  );
+  const siblingIds = useMemo(() => siblings.map((s) => s.norad_id), [siblings]);
 
   const [timeState, setTimeState] = useState<TimeState>({
     playing: true,
@@ -49,17 +67,26 @@ export default function App() {
     return () => { cancelled = true; };
   }, []);
 
+  const [conjLoading, setConjLoading] = useState(false);
+  const [conjTime, setConjTime] = useState<number | null>(null);
+
   // Fetch conjunctions (non-blocking)
   useEffect(() => {
     if (catalog.length === 0) return;
     let cancelled = false;
+    setConjLoading(true);
+    const t0 = Date.now();
     (async () => {
       try {
         const resp = await fetch("/api/conjunctions");
         if (!resp.ok) return;
         const data: Conjunction[] = await resp.json();
-        if (!cancelled) setConjunctions(data);
+        if (!cancelled) {
+          setConjunctions(data);
+          setConjTime(Math.round((Date.now() - t0) / 1000));
+        }
       } catch { /* optional */ }
+      finally { if (!cancelled) setConjLoading(false); }
     })();
     return () => { cancelled = true; };
   }, [catalog]);
@@ -109,6 +136,8 @@ export default function App() {
         filters={filters}
         timeState={timeState}
         selectedId={selectedId}
+        siblingIds={siblingIds}
+        activeConjunction={activeConjunction}
         onSelectObject={selectAndFlyTo}
       />
 
@@ -124,14 +153,25 @@ export default function App() {
         onSearchSubmit={handleSearchSubmit}
       />
 
+      <ConjunctionBrowser
+        conjunctions={conjunctions}
+        catalog={catalog}
+        onSelectObject={selectAndFlyTo}
+        onViewConjunction3D={setActiveConjunction}
+        activeConjunction={activeConjunction}
+      />
+
       <TimeControls timeState={timeState} onChange={setTimeState} />
 
       {selectedId !== null && (
         <ObjectInspector
           noradId={selectedId}
           conjunctions={conjunctions}
-          onClose={() => setSelectedId(null)}
+          siblings={siblings}
+          onClose={() => { setSelectedId(null); setActiveConjunction(null); }}
           onSelectObject={selectAndFlyTo}
+          onViewConjunction3D={setActiveConjunction}
+          activeConjunction={activeConjunction}
         />
       )}
 
@@ -158,7 +198,15 @@ export default function App() {
       {/* Status bar */}
       <div className="status-bar glass-panel">
         {catalog.length.toLocaleString()} objects tracked
-        {conjunctions.length > 0 && ` · ${conjunctions.length} conjunctions`}
+        {conjLoading && (
+          <span className="loading-text"> · Calculating conjunctions...</span>
+        )}
+        {!conjLoading && conjunctions.length > 0 && (
+          <span>
+            {` · ${conjunctions.length} conjunctions`}
+            {conjTime !== null && <span style={{ color: "rgba(200,214,229,0.3)" }}>{` (${conjTime}s)`}</span>}
+          </span>
+        )}
       </div>
     </div>
   );

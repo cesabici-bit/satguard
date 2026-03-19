@@ -6,16 +6,21 @@
  */
 
 import { useEffect, useState } from "react";
-import type { ObjectDetail, Conjunction } from "../types";
+import type { ObjectDetail, Conjunction, CatalogEntry } from "../types";
 
 interface Props {
   noradId: number;
   conjunctions: Conjunction[];
+  siblings: CatalogEntry[];
   onClose: () => void;
   onSelectObject: (noradId: number) => void;
+  onViewConjunction3D: (conj: Conjunction | null) => void;
+  activeConjunction: Conjunction | null;
 }
 
-export default function ObjectInspector({ noradId, conjunctions, onClose, onSelectObject }: Props) {
+export default function ObjectInspector({
+  noradId, conjunctions, siblings, onClose, onSelectObject, onViewConjunction3D, activeConjunction,
+}: Props) {
   const [detail, setDetail] = useState<ObjectDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -136,6 +141,45 @@ export default function ObjectInspector({ noradId, conjunctions, onClose, onSele
           </>
         )}
 
+        {/* Launch Siblings section */}
+        {siblings.length > 0 && (
+          <Section title={`Launch Siblings (${siblings.length})`}>
+            {siblings.slice(0, 20).map((sib) => (
+              <button
+                key={sib.norad_id}
+                onClick={() => onSelectObject(sib.norad_id)}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  width: "100%",
+                  background: "rgba(0,229,255,0.04)",
+                  border: "1px solid rgba(0,229,255,0.1)",
+                  borderRadius: 4,
+                  padding: "4px 8px",
+                  marginBottom: 3,
+                  cursor: "pointer",
+                  fontSize: 11,
+                  color: "#c8d6e5",
+                  textAlign: "left",
+                }}
+              >
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, marginRight: 8 }}>
+                  {sib.name}
+                </span>
+                <span style={{ fontSize: 9, color: "rgba(200,214,229,0.4)", fontFamily: "monospace", flexShrink: 0 }}>
+                  {sib.norad_id} · {sib.intl_designator?.slice(5) || "?"}
+                </span>
+              </button>
+            ))}
+            {siblings.length > 20 && (
+              <div style={{ fontSize: 10, color: "rgba(200,214,229,0.35)", padding: "4px 0", textAlign: "center" }}>
+                ...and {siblings.length - 20} others
+              </div>
+            )}
+          </Section>
+        )}
+
         {/* Conjunction risks section */}
         <Section title={`Collision Risks (${risks.length})`}>
           {risks.length === 0 ? (
@@ -153,6 +197,10 @@ export default function ObjectInspector({ noradId, conjunctions, onClose, onSele
                   conj={conj}
                   partnerId={partnerId}
                   onClickPartner={() => onSelectObject(partnerId)}
+                  onView3D={() => onViewConjunction3D(
+                    activeConjunction === conj ? null : conj
+                  )}
+                  isActive3D={activeConjunction === conj}
                 />
               );
             })
@@ -202,10 +250,14 @@ function ConjunctionCard({
   conj,
   partnerId,
   onClickPartner,
+  onView3D,
+  isActive3D,
 }: {
   conj: Conjunction;
   partnerId: number;
   onClickPartner: () => void;
+  onView3D: () => void;
+  isActive3D: boolean;
 }) {
   const pc = conj.pc;
   const isHighRisk = pc !== null && pc > 1e-4;
@@ -263,6 +315,25 @@ function ConjunctionCard({
         <span>Pc: {pc !== null ? pc.toExponential(2) : "N/A"}</span>
         <span style={{ fontSize: 10 }}>TCA: {formatTCA(conj.tca)}</span>
       </div>
+      <button
+        onClick={onView3D}
+        style={{
+          marginTop: 5,
+          width: "100%",
+          padding: "3px 0",
+          background: isActive3D ? "rgba(94,207,255,0.15)" : "rgba(255,255,255,0.04)",
+          border: `1px solid ${isActive3D ? "rgba(94,207,255,0.4)" : "rgba(255,255,255,0.08)"}`,
+          borderRadius: 4,
+          color: isActive3D ? "#5ecfff" : "rgba(200,214,229,0.5)",
+          fontSize: 10,
+          fontWeight: 600,
+          letterSpacing: 1,
+          cursor: "pointer",
+          transition: "all 0.2s",
+        }}
+      >
+        {isActive3D ? "HIDE 3D" : "VIEW 3D"}
+      </button>
     </div>
   );
 }
