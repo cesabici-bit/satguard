@@ -124,6 +124,7 @@ const Globe = forwardRef<GlobeHandle, Props>(function Globe(
   const prevSelectedSizeRef = useRef<number>(3);
   const prevSelectedColorRef = useRef<Color>(Color.WHITE);
   const siblingIndicesRef = useRef<{ idx: number; origSize: number; origColor: Color }[]>([]);
+  const siblingIdxSetRef = useRef<Set<number>>(new Set());
   const arcEntitiesRef = useRef<Cesium.Entity[]>([]);
   const heatmapLayerRef = useRef<Cesium.ImageryLayer | null>(null);
 
@@ -233,6 +234,7 @@ const Globe = forwardRef<GlobeHandle, Props>(function Globe(
       }
     }
     siblingIndicesRef.current = saved;
+    siblingIdxSetRef.current = new Set(saved.map((s) => s.idx));
   }, [siblingIds]);
 
   // Initialize Cesium viewer once
@@ -437,26 +439,22 @@ const Globe = forwardRef<GlobeHandle, Props>(function Globe(
         );
         point.show = true;
 
-        // In heatmap mode, dim all satellites to 15% opacity
+        // In heatmap mode, dim non-selected satellites to 15% opacity
+        const isSelected = i === selectedIndexRef.current;
+        const isSibling = siblingIdxSetRef.current.has(i);
+
         if (filters.showHeatmap) {
-          point.color = Color.fromAlpha(
-            TYPE_COLORS[entry.object_type] ?? TYPE_COLORS.OTHER,
-            0.15,
-          );
-          point.pixelSize = 1.5;
-        } else {
-          // Restore normal appearance (skip selected & sibling points)
-          const isSelected = i === selectedIndexRef.current;
-          const isSibling = siblingIndicesRef.current.some((s) => s.idx === i);
           if (!isSelected && !isSibling) {
-            const origColor = TYPE_COLORS[entry.object_type] ?? TYPE_COLORS.OTHER;
-            const origSize = TYPE_SIZES[entry.object_type] ?? 3;
-            if (point.color.alpha < 0.5) {
-              // Was dimmed, restore
-              point.color = origColor;
-              point.pixelSize = origSize;
-            }
+            point.color = Color.fromAlpha(
+              TYPE_COLORS[entry.object_type] ?? TYPE_COLORS.OTHER,
+              0.15,
+            );
+            point.pixelSize = 1.5;
           }
+        } else if (!isSelected && !isSibling && point.color.alpha < 0.5) {
+          // Restore from dimmed state
+          point.color = TYPE_COLORS[entry.object_type] ?? TYPE_COLORS.OTHER;
+          point.pixelSize = TYPE_SIZES[entry.object_type] ?? 3;
         }
       }
 

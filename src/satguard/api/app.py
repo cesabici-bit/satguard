@@ -2,7 +2,7 @@
 
 Endpoints:
     GET /api/catalog        — Active satellite catalog (TLE strings + metadata)
-    GET /api/conjunctions   — Top 50 conjunctions for ISS (or first object)
+    GET /api/conjunctions   — Top 50 conjunctions (all-on-all vectorized screening)
     GET /api/objects/{id}   — Object detail by NORAD ID
 """
 
@@ -18,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 
 from satguard.api.cache import cache
 
-app = FastAPI(title="SatGuard API", version="0.3.0")
+app = FastAPI(title="SatGuard API", version="0.4.0")
 
 # CORS for Vite dev server
 app.add_middleware(
@@ -166,7 +166,7 @@ async def get_conjunctions() -> list[dict[str, Any]]:
 
         import contextlib
         import logging
-        from datetime import timedelta
+        from datetime import datetime, timedelta, timezone
 
         import numpy as np
         from scipy.spatial import KDTree as KDTreeScipy
@@ -214,8 +214,9 @@ async def get_conjunctions() -> list[dict[str, Any]]:
 
         logger.info("Propagating %d objects with SatrecArray...", n_sats)
 
-        # Build epoch array: 3 days, 120s steps
-        start_epoch = valid_tles[0].epoch_datetime
+        # Build epoch array: 3 days from NOW, 120s steps
+        # Must start from current time, not TLE epoch (which can be days old)
+        start_epoch = datetime.now(timezone.utc)
         step_sec = 120.0
         n_steps = int(3 * 86400 / step_sec) + 1
 
@@ -328,9 +329,13 @@ async def get_conjunctions() -> list[dict[str, Any]]:
             nid_b = norad_ids[gj]
             tca = epoch_dts[best_step]
 
+            # Sanity checks on physical plausibility
+            assert best_dist > 0, f"miss_distance must be positive, got {best_dist}"
+            assert rel_vel < 20.0, f"rel_vel {rel_vel} km/s exceeds LEO max (~15 km/s)"
+
             # Compute Pc
             pc = float("nan")
-            with contextlib.suppress(Exception):
+            try:
                 orbit_a = classify_orbit(mean_motions[gi])
                 orbit_b = classify_orbit(mean_motions[gj])
                 cov_p = default_covariance(orbit_a)
@@ -339,6 +344,12 @@ async def get_conjunctions() -> list[dict[str, Any]]:
                     cov_p, cov_s, r_a, v_a, r_b, v_b,
                 )
                 pc = foster_pc(best_dist, cov_2d, hard_body_radius=0.02)
+                # Pc is a probability: must be in [0, 1]
+                if not (0.0 <= pc <= 1.0):
+                    logger.warning("Pc=%e out of [0,1] range for %d vs %d", pc, nid_a, nid_b)
+                    pc = float("nan")
+            except Exception:
+                logger.debug("Pc computation failed for %d vs %d", nid_a, nid_b, exc_info=True)
 
             results.append({
                 "norad_id_primary": nid_a,
