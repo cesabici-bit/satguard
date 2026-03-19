@@ -5,6 +5,7 @@ Usage:
     satguard watch --norad-id 25544 --days 3 --config ~/.satguard/config.toml
     satguard history --norad-ids 25544,41335
     satguard alert-test --config ~/.satguard/config.toml
+    satguard fleet screen --fleet fleet.yaml --output report.pdf
 """
 
 from __future__ import annotations
@@ -489,6 +490,92 @@ def serve(port: int, host: str, dev: bool) -> None:
         click.echo("Frontend: run 'cd web && npm run dev' separately")
 
     uvicorn.run(app, host=host, port=port)
+
+
+# ---------------------------------------------------------------------------
+# fleet (v0.5) — constellation batch screening + PDF report
+# ---------------------------------------------------------------------------
+
+
+@cli.group()
+def fleet() -> None:
+    """Fleet management: batch screening for constellations."""
+
+
+@fleet.command("screen")
+@click.option(
+    "--fleet", "fleet_path", required=True,
+    type=click.Path(exists=True), help="Fleet YAML file",
+)
+@click.option("--output", "output_path", type=click.Path(), default=None, help="Output PDF path")
+@click.option("--no-pdf", is_flag=True, help="Console output only, no PDF")
+def fleet_screen(fleet_path: str, output_path: str | None, no_pdf: bool) -> None:
+    """Screen all fleet objects against active catalog."""
+    asyncio.run(_fleet_screen_async(fleet_path, output_path, no_pdf))
+
+
+async def _fleet_screen_async(
+    fleet_path: str, output_path: str | None, no_pdf: bool,
+) -> None:
+    """Async implementation of fleet screening."""
+    from satguard.fleet.batch import screen_fleet
+    from satguard.fleet.parser import load_fleet
+    from satguard.report.pdf import generate_report
+
+    fleet_file = Path(fleet_path)
+    try:
+        fleet_config = load_fleet(fleet_file)
+    except (FileNotFoundError, ValueError) as e:
+        click.echo(f"ERROR: {e}", err=True)
+        sys.exit(1)
+
+    click.echo("SatGuard Fleet Screening")
+    click.echo(f"{'=' * 50}")
+    click.echo(f"Fleet:      {fleet_config.name}")
+    click.echo(f"Objects:    {len(fleet_config.objects)} satellites")
+    click.echo(f"Window:     {fleet_config.thresholds.days} days")
+    t = fleet_config.thresholds
+    click.echo(f"Threshold:  {t.miss_km:.0f} km / Pc >= {t.pc:.1e}")
+    click.echo()
+
+    click.echo("Screening fleet against active catalog...")
+    conjunctions = await screen_fleet(fleet_config)
+
+    click.echo(f"\nResults: {len(conjunctions)} conjunction(s)")
+    click.echo(f"{'=' * 70}")
+
+    if not conjunctions:
+        click.echo("No conjunctions above threshold. All clear.")
+        return
+
+    # Console table (top 10)
+    click.echo(
+        f"{'#':>3}  {'Primary':>8}  {'Secondary':>8}  "
+        f"{'TCA':>20}  {'Miss(km)':>10}  {'Vrel(km/s)':>10}  {'Pc':>10}"
+    )
+    click.echo(f"{'─' * 78}")
+
+    for i, sc in enumerate(conjunctions[:10]):
+        e = sc.event
+        click.echo(
+            f"{i+1:>3}  {e.norad_id_primary:>8}  {e.norad_id_secondary:>8}  "
+            f"{e.tca.strftime('%Y-%m-%d %H:%M:%S'):>20}  "
+            f"{e.miss_distance_km:>10.3f}  "
+            f"{e.relative_velocity_km_s:>10.2f}  "
+            f"{sc.pc:>10.2e}"
+        )
+
+    if len(conjunctions) > 10:
+        click.echo(f"\n  ... and {len(conjunctions) - 10} more (see PDF report)")
+
+    # Generate PDF
+    if not no_pdf:
+        if output_path is None:
+            ts = datetime.now(UTC).strftime("%Y%m%d_%H%M")
+            output_path = f"satguard_report_{fleet_config.name}_{ts}.pdf"
+        out = Path(output_path)
+        generate_report(fleet_config, conjunctions, out)
+        click.echo(f"\nPDF report saved: {out}")
 
 
 async def _alert_test_async(config_path: str | None) -> None:

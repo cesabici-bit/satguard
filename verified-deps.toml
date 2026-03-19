@@ -231,3 +231,38 @@ verified_date = "2026-03-13"
 verified_via = "https://github.com/shashwatak/satellite-js"
 methods_used = ["twoline2satrec", "propagate", "eciToGeodetic", "degreesLat", "degreesLong"]
 notes = "Post-MVP (v0.3). Client-side SGP4 propagation per il globe. Returns ECI in km, geodetic in radians."
+
+# ============================================================
+# Python — Fleet + Report (v0.5)
+# ============================================================
+
+[[dependency]]
+name = "fpdf2"
+version = "2.8.7"
+verified_date = "2026-03-19"
+verified_via = "https://pypi.org/project/fpdf2/"
+methods_used = [
+    "fpdf.FPDF(orientation, unit, format)",
+    "FPDF.add_page()",
+    "FPDF.set_font(family, style, size)",
+    "FPDF.cell(w, h, text, border, new_x, new_y, align, fill)",
+    "FPDF.multi_cell(w, h, text)",
+    "FPDF.image(name, x, y, w, h)",
+    "FPDF.output(name)",
+    "FPDF.ln(h)",
+    "FPDF.set_text_color(r, g, b)",
+    "FPDF.set_fill_color(r, g, b)",
+    "FPDF.set_draw_color(r, g, b)",
+]
+notes = "Lightweight PDF generation. No native dependencies. Import as 'from fpdf import FPDF'. ln param in cell() deprecated in v2.8+, use new_x/new_y instead."
+
+[[dependency]]
+name = "PyYAML"
+version = "6.0.3"
+verified_date = "2026-03-19"
+verified_via = "https://pypi.org/project/PyYAML/"
+methods_used = [
+    "yaml.safe_load(stream)",
+    "yaml.YAMLError",
+]
+notes = "YAML parser for fleet.yaml config files. Import as 'import yaml'. safe_load uses SafeLoader internally. Returns dict for YAML mappings."

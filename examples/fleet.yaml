@@ -1,0 +1,12 @@
+# SatGuard Fleet Configuration
+# Usage: satguard fleet screen --fleet fleet.yaml
+
+name: ISS-and-Starlink
+thresholds:
+  pc: 1.0e-7        # Minimum Pc to report
+  miss_km: 50.0      # KDTree screening threshold (km)
+  days: 3             # Screening window (days)
+objects:
+  - 25544   # ISS (ZARYA)
+  - 48274   # STARLINK-2305
+  - 53239   # STARLINK-4781

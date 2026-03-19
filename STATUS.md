@@ -1,20 +1,23 @@
 # Status — SatGuard
 
 ## Fase Corrente
-v0.4.1 — Globe Enhanced + Background Pre-compute — Implementata e verificata nel browser.
+v0.5.0 — Constellation Batch + Fleet.yaml + Report PDF — Implementata, test verdi.
 
-## Ultimo Subtask Completato (v0.4.1)
-- Background pre-compute congiunzioni all'avvio server (lifespan context manager)
-- Cache TTL congiunzioni aumentata a 1h (da 10min)
-- Fix heatmap: SingleTileImageryProvider.fromUrl() (Cesium 1.139 async API)
-- Logica congiunzioni estratta in _compute_conjunctions() riusabile
-- 4 nuovi test (TTL, version, lifespan, cache hit)
-- Verifica browser completa: globe, conjunctions, heatmap, time slider, search, filters — tutto OK
-- check-all: 199 passed, 1 skipped
-- Frontend: TypeScript clean
+## Ultimo Subtask Completato (v0.5.0)
+- S0: Aggiunto fpdf2 (2.8.7) e PyYAML (6.0.3) — verified-deps.toml aggiornato (M1)
+- S1: Fleet parser (fleet/parser.py): FleetConfig, FleetThresholds, load_fleet() con validazione YAML
+- S2: Batch screening (fleet/batch.py): screen_fleet() riusa catalog/propagation/screening/Pc pipeline
+- S3: PDF report (report/pdf.py): cover page, executive summary, conjunction table, plots, CDM excerpts
+- S4: CLI `satguard fleet screen --fleet fleet.yaml [--output report.pdf] [--no-pdf]`
+- S5: 25 nuovi test (parser, batch, report, CLI, domain sanity L2)
+- Exports: __init__.py aggiornato con FleetConfig, FleetThresholds, load_fleet, screen_fleet, ScoredConjunction, generate_report
+- check-all: 224 passed, 1 skipped — 0 regressioni
+- Lint: ruff clean sui file v0.5
+- Types: mypy clean sui file v0.5 (errori pre-esistenti in app.py non toccati)
 
 ## Prossimo Subtask
-- v0.5: Constellation batch + fleet.yaml + report PDF
+- v0.5 CHECKPOINT: verifica utente del PDF generato (smoke test E2E con fleet reale)
+- v0.6: Maneuver planning + historical replay
 
 ## Blockers
 Nessuno

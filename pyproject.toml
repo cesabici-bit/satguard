@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "satguard"
-version = "0.3.0"
+version = "0.5.0"
 description = "Open-source conjunction assessment pipeline for space objects"
 readme = "README.md"
 license = {text = "MIT"}
@@ -29,6 +29,8 @@ dependencies = [
     "click>=8.1",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
+    "fpdf2>=2.8",
+    "PyYAML>=6.0",
 ]
 
 [project.optional-dependencies]
