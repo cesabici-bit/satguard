@@ -17,4 +17,26 @@
 
 ## Issues
 
-_(nessuna issue registrata — aggiornare man mano che emergono)_
+### EC-001: Conjunctions endpoint returned 50 identical ISS ZARYA vs UNITY events
+- **Data**: 2026-03-19
+- **Sintomo**: 50 congiunzioni, tutte la stessa coppia ISS(ZARYA) vs ISS(UNITY)
+- **Causa**: Screening single-primary (solo ISS) senza filtro siblings. ISS ha molte parti co-orbitanti con diversi intl_designator ma stessa posizione
+- **Fix**: Riscritto endpoint con all-on-all SatrecArray + filtro intl_designator[:5] + filtro co-orbiting (vrel < 0.5 km/s)
+- **Prevenzione**: Sempre filtrare siblings E co-orbiting. Sempre verificare diversità nei risultati (# coppie uniche). Aggiungere test L2 con sanity check
+- **Status**: FIXED
+
+### EC-002: Snapshot-based all-on-all screening found only co-orbiting objects
+- **Data**: 2026-03-19
+- **Sintomo**: 50 congiunzioni a 0.00 km miss distance, tutte oggetti co-locati con ISS
+- **Causa**: A 2h intervalli, oggetti su orbite incrociate (vrel ~10 km/s) si mancano tra snapshot. Solo oggetti co-orbitanti (vrel ~0) restano entro threshold per ore
+- **Fix**: Passato a time-stepping fine (120s) con SatrecArray vettorizzato + KDTree per epoch
+- **Prevenzione**: Mai usare snapshot sparsi per screening LEO. Usare time-stepping ≤ 120s
+- **Status**: FIXED
+
+### EC-003: v0.4 frontend features shipped without automated tests
+- **Data**: 2026-03-19
+- **Sintomo**: 177 test passano ma nessuno copre codice v0.4 (siblings, heatmap, arcs, time slider, ConjunctionBrowser, nuovo endpoint)
+- **Causa**: Focus su velocità implementazione, bypass di M2 (oracle tests) e M3 (smoke first)
+- **Fix**: APERTO — servono test per: endpoint congiunzioni (sanity check su output), siblings utility, heatmap rendering
+- **Prevenzione**: Regola R1 (test-before-declare), R2 (oracle-or-explain), R3 (declare-skip-explicitly). Vedere memory/feedback_enforce_mechanisms.md
+- **Status**: OPEN
