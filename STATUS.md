@@ -1,26 +1,19 @@
 # Status — SatGuard
 
 ## Fase Corrente
-v0.4 — Globe Enhanced — Implementata.
+v0.4.1 — Globe Enhanced + Background Pre-compute — Implementata e verificata nel browser.
 
-## Ultimo Subtask Completato (v0.4)
-- S0: Esteso types (CatalogEntry.intl_designator, FilterState.showHeatmap)
-- S1: Sibling index utility (buildSiblingIndex, getSiblings)
-- S2: Sibling highlighting nel Globe (celeste, size 8)
-- S3: Siblings list in ObjectInspector (max 20, cliccabili)
-- S4: Conjunction 3D arc view (polyline ±10min TCA, miss distance label)
-- S5: Heatmap continua gaussiana (canvas 1024x512, SingleTileImageryProvider)
-- S6: Time slider (±24h, tick labels, pausa su drag)
-- ConjunctionBrowser: pannello collapsibile con tutte le congiunzioni ordinate per rischio
-- Backend: all-on-all screening con SatrecArray vettorizzato (~2min, cached 10min)
-- Filtri: siblings (intl_designator[:5]) + co-orbiting (vrel < 0.5 km/s)
-- Loading indicator: "Calculating conjunctions..." con tempo
-- check-all: 177 passed, 1 skipped
-- Frontend: TypeScript clean, Vite build OK
+## Ultimo Subtask Completato (v0.4.1)
+- Background pre-compute congiunzioni all'avvio server (lifespan context manager)
+- Cache TTL congiunzioni aumentata a 1h (da 10min)
+- Fix heatmap: SingleTileImageryProvider.fromUrl() (Cesium 1.139 async API)
+- Logica congiunzioni estratta in _compute_conjunctions() riusabile
+- 4 nuovi test (TTL, version, lifespan, cache hit)
+- Verifica browser completa: globe, conjunctions, heatmap, time slider, search, filters — tutto OK
+- check-all: 199 passed, 1 skipped
+- Frontend: TypeScript clean
 
 ## Prossimo Subtask
-- Pre-calcolo congiunzioni all'avvio server (background task)
-- Aumentare TTL cache congiunzioni a 1h
 - v0.5: Constellation batch + fleet.yaml + report PDF
 
 ## Blockers
@@ -80,3 +73,4 @@ Nessuno
 - 2026-03-18 (sessione 4): v0.2 completa. 8 subtask, 43 nuovi test (161 totali). Cov assessment, history, alerts, CLI watch/history/alert-test.
 - 2026-03-18 (sessione 5): v0.3 Globe 3D. FastAPI backend (3 endpoints), React+CesiumJS frontend (PointPrimitiveCollection 30K+, satellite.js client-side propagation, click-to-inspect, conjunction overlay, filters, time controls). 16 nuovi test (177 totali). CLI `serve` command.
 - 2026-03-19 (sessione 6): v0.4 Globe Enhanced. 4 frontend features (siblings, conjunction 3D arcs, heatmap mode, time slider) + ConjunctionBrowser panel + backend rewrite (all-on-all SatrecArray vectorized screening, sibling/co-orbiting filters). 50 real unique conjunctions found. 177 test invariati.
+- 2026-03-19 (sessione 7): v0.4.1. Background pre-compute + cache TTL 1h + fix heatmap (fromUrl async). Verifica browser completa di tutte le feature. 199 test.

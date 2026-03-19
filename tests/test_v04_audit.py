@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 
-from satguard.api.app import app, classify_orbit
+from satguard.api.app import CONJUNCTIONS_TTL, app, classify_orbit
 from satguard.api.cache import TTLCache, cache
 
 
@@ -266,3 +266,41 @@ class TestStartEpochFix:
         # JD for 2026 should be ~2461000+
         assert 2460000 < jd < 2462000, f"JD {jd} implausible for 2026"
         assert 0.0 <= fr < 1.0, f"Fractional day {fr} out of range"
+
+
+# ============================================================
+# L1: Background pre-compute and cache TTL tests
+# ============================================================
+
+class TestBackgroundPrecompute:
+    """L1: Verify background pre-compute infrastructure and cache TTL."""
+
+    def test_conjunctions_ttl_is_one_hour(self) -> None:
+        """Cache TTL must be 3600s (1 hour) to avoid repeated heavy computation."""
+        assert CONJUNCTIONS_TTL == 3600, f"Expected 3600, got {CONJUNCTIONS_TTL}"
+
+    def test_app_version_updated(self) -> None:
+        """App version must reflect the pre-compute enhancement."""
+        assert app.version == "0.4.1"
+
+    def test_lifespan_configured(self) -> None:
+        """App must have a lifespan handler for background pre-compute."""
+        # FastAPI stores the lifespan as router.lifespan_context
+        assert app.router.lifespan_context is not None
+
+    def test_compute_conjunctions_uses_cache(self) -> None:
+        """_compute_conjunctions returns cached data when available."""
+        cache.clear()
+        mock_data = [{"norad_id_primary": 1, "miss_distance_km": 0.5}]
+        cache.set("conjunctions", mock_data, 3600)
+
+        client = TestClient(app)
+        resp = client.get("/api/conjunctions")
+        assert resp.status_code == 200
+        assert resp.json() == mock_data
+
+    @pytest.fixture(autouse=True)
+    def _clear_cache(self) -> None:
+        cache.clear()
+        yield
+        cache.clear()

@@ -678,25 +678,33 @@ const Globe = forwardRef<GlobeHandle, Props>(function Globe(
     if (!canvas) return;
 
     // Convert canvas to blob URL for imagery provider
-    canvas.toBlob((blob) => {
+    canvas.toBlob(async (blob) => {
       if (!blob || !viewerRef.current) return;
       const url = URL.createObjectURL(blob);
 
-      const provider = new Cesium.SingleTileImageryProvider({
-        url,
-        rectangle: Rectangle.fromDegrees(-180, -90, 180, 90),
-      });
+      try {
+        const provider = await Cesium.SingleTileImageryProvider.fromUrl(url, {
+          rectangle: Rectangle.fromDegrees(-180, -90, 180, 90),
+        });
 
-      const layer = viewerRef.current.imageryLayers.addImageryProvider(provider);
-      layer.alpha = 0.85;
-      heatmapLayerRef.current = layer;
+        if (!viewerRef.current) {
+          URL.revokeObjectURL(url);
+          return;
+        }
 
-      // Clean up blob URL when layer is removed
-      const origDestroy = layer.destroy.bind(layer);
-      layer.destroy = () => {
+        const layer = viewerRef.current.imageryLayers.addImageryProvider(provider);
+        layer.alpha = 0.85;
+        heatmapLayerRef.current = layer;
+
+        // Clean up blob URL when layer is removed
+        const origDestroy = layer.destroy.bind(layer);
+        layer.destroy = () => {
+          URL.revokeObjectURL(url);
+          return origDestroy();
+        };
+      } catch {
         URL.revokeObjectURL(url);
-        return origDestroy();
-      };
+      }
     }, "image/png");
   }, [filters.showHeatmap, conjunctions]); // eslint-disable-line react-hooks/exhaustive-deps
 

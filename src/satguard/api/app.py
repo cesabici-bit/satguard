@@ -8,7 +8,11 @@ Endpoints:
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import math
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +22,28 @@ from fastapi.staticfiles import StaticFiles
 
 from satguard.api.cache import cache
 
-app = FastAPI(title="SatGuard API", version="0.4.0")
+logger = logging.getLogger("satguard.api")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Pre-compute conjunctions in background at server startup."""
+    task = asyncio.create_task(_precompute_conjunctions())
+    yield
+    task.cancel()
+
+
+async def _precompute_conjunctions() -> None:
+    """Background task: pre-compute conjunctions so the first request is instant."""
+    try:
+        logger.info("Background pre-compute: starting conjunction screening...")
+        await _compute_conjunctions()
+        logger.info("Background pre-compute: conjunctions ready.")
+    except Exception:
+        logger.exception("Background pre-compute failed — first request will compute on demand.")
+
+
+app = FastAPI(title="SatGuard API", version="0.4.1", lifespan=lifespan)
 
 # CORS for Vite dev server
 app.add_middleware(
@@ -30,7 +55,7 @@ app.add_middleware(
 
 # Constants
 CATALOG_TTL = 3600  # 1 hour
-CONJUNCTIONS_TTL = 600  # 10 minutes
+CONJUNCTIONS_TTL = 3600  # 1 hour
 EARTH_RADIUS_KM = 6371.0
 MU_EARTH = 398600.4418  # km^3/s^2
 
@@ -137,9 +162,8 @@ async def get_catalog() -> list[dict[str, Any]]:
     return await _get_catalog()
 
 
-@app.get("/api/conjunctions")
-async def get_conjunctions() -> list[dict[str, Any]]:
-    """Return top 50 conjunctions via all-on-all vectorized screening.
+async def _compute_conjunctions() -> list[dict[str, Any]]:
+    """Compute top 50 conjunctions via all-on-all vectorized screening.
 
     Approach:
         1. Propagate ALL catalog objects using sgp4 SatrecArray (vectorized C)
@@ -153,7 +177,7 @@ async def get_conjunctions() -> list[dict[str, Any]]:
     in a single vectorized C call (~2-5 seconds), then KDTree per epoch.
     Total: ~30-60 seconds.
 
-    Results are cached for 10 minutes.
+    Results are cached for 1 hour.
     """
     cached = cache.get("conjunctions")
     if cached is not None:
@@ -164,8 +188,6 @@ async def get_conjunctions() -> list[dict[str, Any]]:
         if cached is not None:
             return cached
 
-        import contextlib
-        import logging
         from datetime import datetime, timedelta, timezone
 
         import numpy as np
@@ -176,8 +198,6 @@ async def get_conjunctions() -> list[dict[str, Any]]:
         from satguard.catalog.celestrak import fetch_catalog
         from satguard.covariance.realism import default_covariance, project_to_encounter_plane
         from satguard.propagate.sgp4 import _jd_from_datetime
-
-        logger = logging.getLogger("satguard.api")
 
         catalog = await fetch_catalog("active")
         tles = catalog.tles
@@ -367,6 +387,12 @@ async def get_conjunctions() -> list[dict[str, Any]]:
         logger.info("Found %d conjunctions after filtering", len(results))
         cache.set("conjunctions", results, CONJUNCTIONS_TTL)
         return results
+
+
+@app.get("/api/conjunctions")
+async def get_conjunctions() -> list[dict[str, Any]]:
+    """Return top 50 conjunctions. Pre-computed at startup, cached 1 hour."""
+    return await _compute_conjunctions()
 
 
 @app.get("/api/objects/{norad_id}")
