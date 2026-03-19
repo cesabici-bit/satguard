@@ -37,6 +37,6 @@
 - **Data**: 2026-03-19
 - **Sintomo**: 177 test passano ma nessuno copre codice v0.4 (siblings, heatmap, arcs, time slider, ConjunctionBrowser, nuovo endpoint)
 - **Causa**: Focus su velocità implementazione, bypass di M2 (oracle tests) e M3 (smoke first)
-- **Fix**: APERTO — servono test per: endpoint congiunzioni (sanity check su output), siblings utility, heatmap rendering
+- **Fix**: 18 test aggiunti in test_v04_audit.py (L1+L2). 5 bug fixati (start_epoch, heatmap color, Pc validation, version, perf). 195 test totali.
 - **Prevenzione**: Regola R1 (test-before-declare), R2 (oracle-or-explain), R3 (declare-skip-explicitly). Vedere memory/feedback_enforce_mechanisms.md
-- **Status**: OPEN
+- **Status**: FIXED (2026-03-20)
