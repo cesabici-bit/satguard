@@ -1,6 +1,6 @@
 """SatGuard — Open-source conjunction assessment pipeline."""
 
-__version__ = "0.6.0"
+__version__ = "1.0.0"
 
 from satguard.alert.rules import AlertConfig, load_config, should_alert
 from satguard.alert.webhook import send_alert

@@ -195,9 +195,9 @@ def vectorized_screen(
             min_dist_per_obj = dists[np.arange(n_sats), min_step_per_obj]  # (n_sats,)
 
             # Filter by threshold
-            candidates = np.where(min_dist_per_obj < config.threshold_km)[0]
+            close_idxs = np.where(min_dist_per_obj < config.threshold_km)[0]
 
-            for gj in candidates:
+            for gj in close_idxs:
                 gj = int(gj)
                 nid_a = norad_ids[gi]
                 nid_b = norad_ids[gj]
@@ -250,9 +250,9 @@ def vectorized_screen(
     )
 
     # --- Refine TCA and compute Pc for top candidates ---
-    candidates = sorted(pair_best.values(), key=lambda x: x[0])[
-        : config.max_results * 4
-    ]
+    candidates: list[tuple[float, int, int, int]] = sorted(
+        pair_best.values(), key=lambda x: x[0],
+    )[: config.max_results * 4]
 
     results: list[ScoredConjunction] = []
 

@@ -212,7 +212,9 @@ async def _screen_async(
                 pc_foster=pc,
                 pc_chan=pc_c,
                 tle_epoch_primary=primary_tle.epoch_datetime,
-                tle_epoch_secondary=sec_tle.epoch_datetime if sec_tle else primary_tle.epoch_datetime,
+                tle_epoch_secondary=(
+                    sec_tle.epoch_datetime if sec_tle else primary_tle.epoch_datetime
+                ),
                 covariance_source="default_LEO",
                 tle_line1_primary=primary_tle.line1,
                 tle_line2_primary=primary_tle.line2,
@@ -578,12 +580,12 @@ async def _fleet_screen_async(
     click.echo(f"{'─' * 78}")
 
     for i, sc in enumerate(conjunctions[:10]):
-        e = sc.event
+        ev = sc.event
         click.echo(
-            f"{i+1:>3}  {e.norad_id_primary:>8}  {e.norad_id_secondary:>8}  "
-            f"{e.tca.strftime('%Y-%m-%d %H:%M:%S'):>20}  "
-            f"{e.miss_distance_km:>10.3f}  "
-            f"{e.relative_velocity_km_s:>10.2f}  "
+            f"{i+1:>3}  {ev.norad_id_primary:>8}  {ev.norad_id_secondary:>8}  "
+            f"{ev.tca.strftime('%Y-%m-%d %H:%M:%S'):>20}  "
+            f"{ev.miss_distance_km:>10.3f}  "
+            f"{ev.relative_velocity_km_s:>10.2f}  "
             f"{sc.pc:>10.2e}"
         )
 
@@ -667,7 +669,7 @@ async def _maneuver_async(
     click.echo(f"Found {len(events)} conjunction(s). Planning maneuver for closest...")
     event = events[0]  # Closest approach
 
-    click.echo(f"\nConjunction:")
+    click.echo("\nConjunction:")
     click.echo(f"  TCA:       {event.tca.isoformat()}")
     click.echo(f"  Miss:      {event.miss_distance_km:.3f} km")
     click.echo(f"  Vrel:      {event.relative_velocity_km_s:.3f} km/s")
@@ -680,22 +682,25 @@ async def _maneuver_async(
     )
     try:
         result = planner.plan(event, threshold_pc=threshold)
-    except AssertionError as e:
-        click.echo(f"\nERROR: {e}", err=True)
+    except AssertionError as exc:
+        click.echo(f"\nERROR: {exc}", err=True)
         sys.exit(1)
 
     click.echo(f"  Pc:        {result.original_pc:.2e}")
     click.echo()
 
     if not result.action_required:
-        click.echo(f"NO ACTION REQUIRED — Pc ({result.original_pc:.2e}) < threshold ({threshold:.1e})")
+        click.echo(
+            f"NO ACTION REQUIRED — Pc ({result.original_pc:.2e})"
+            f" < threshold ({threshold:.1e})"
+        )
         return
 
     click.echo(f"ACTION REQUIRED — Pc ({result.original_pc:.2e}) > threshold ({threshold:.1e})")
 
     if result.recommended:
         r = result.recommended
-        click.echo(f"\nRECOMMENDED MANEUVER:")
+        click.echo("\nRECOMMENDED MANEUVER:")
         click.echo(f"  Δv:          {r.burn.delta_v_ms:.3f} m/s ({r.burn.direction})")
         click.echo(f"  Lead time:   {r.burn.time_before_tca_s/3600:.1f} hours before TCA")
         click.echo(f"  Displacement: {r.displacement.magnitude_km:.3f} km")
@@ -780,7 +785,10 @@ def replay(norad_ids: str, history_dir: str | None, plot: bool) -> None:
         click.echo(f"  Peak Pc:  {result.peak_pc:.2e}")
         click.echo(f"  Final Pc: {result.final_pc:.2e}")
 
-        click.echo("\n  Time             | Miss(km) | Pc       | Stored Miss | Stored Pc | TLE Age P(h) | TLE Age S(h)")
+        click.echo(
+            "\n  Time             | Miss(km) | Pc       "
+            "| Stored Miss | Stored Pc | TLE Age P(h) | TLE Age S(h)"
+        )
         click.echo(f"  {'-' * 95}")
         for pt in result.timeline:
             click.echo(

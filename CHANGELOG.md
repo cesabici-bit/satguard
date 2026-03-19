@@ -5,6 +5,16 @@ All notable changes to SatGuard will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2026-03-19
+
+### Changed
+
+- First stable release
+- Development Status: Alpha → Beta
+- Fixed all mypy (8) and ruff (15) errors across codebase
+- Comprehensive README and CHANGELOG covering all features v0.1–v0.6
+- 254 tests passing, mypy clean, ruff clean
+
 ## [0.6.0] - 2026-03-19
 
 ### Added

@@ -1,15 +1,16 @@
 # Status — SatGuard
 
 ## Fase Corrente
-v0.6.0 — Maneuver Planning + Historical Replay + docs polish. 254 test verdi.
+v1.0.0 — Stable Release. mypy clean, ruff clean, 254 test verdi.
 
-## Ultimo Subtask Completato (v0.6.0 docs)
-- CHANGELOG aggiornato con entry v0.4.0 → v0.6.0
-- README aggiornato con tutte le feature v0.1–v0.6 (Globe 3D, Fleet, Maneuver, Replay, 254 test)
+## Ultimo Subtask Completato (v1.0.0)
+- Fixed 8 mypy errors + 15 ruff errors
+- Bump versione 1.0.0, classifier Beta
+- CHANGELOG + README completi
 - 254 tests passing, 1 skipped, 0 regressions
 
 ## Prossimo Subtask
-- Da decidere con utente
+- Da decidere con utente (Rust core, space weather, ML prediction)
 
 ## Blockers
 Nessuno
@@ -83,4 +84,4 @@ Nessuno
 - 2026-03-19 (sessione 7): v0.4.1. Background pre-compute + cache TTL 1h + fix heatmap (fromUrl async). Verifica browser completa di tutte le feature. 199 test.
 - 2026-03-19 (sessione 8): v0.5.1. Extracted vectorized SatrecArray screening into shared module (screen/vectorized.py). fleet/batch.py and api/app.py both delegate to it. 225 test.
 - 2026-03-19 (sessione 9): v0.6.0. Maneuver planning (CW linearized) + historical replay. 8 new files, 29 new tests (254 totali). M4 verification: CW vs Hill 7/7 PASS.
-- 2026-03-19 (sessione 10): v0.6.0 docs. CHANGELOG (v0.4–v0.6), README completo con tutte le feature.
+- 2026-03-19 (sessione 10): v1.0.0 release. Fix 8 mypy + 15 ruff errors. CHANGELOG/README completi. Bump 1.0.0.

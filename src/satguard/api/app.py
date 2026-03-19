@@ -211,7 +211,7 @@ async def _compute_conjunctions() -> list[dict[str, Any]]:
                 "pc": sc.pc,
             })
 
-        results.sort(key=lambda r: r["miss_distance_km"])
+        results.sort(key=lambda r: float(r["miss_distance_km"]))  # type: ignore[arg-type]
         logger.info("Found %d conjunctions after filtering", len(results))
         cache.set("conjunctions", results, CONJUNCTIONS_TTL)
         return results
@@ -267,7 +267,7 @@ async def post_maneuver(req: ManeuverRequest) -> dict[str, Any]:
         primary_tle = await fetch_tle_by_norad(req.norad_id_primary)
         secondary_tle = await fetch_tle_by_norad(req.norad_id_secondary)
     except Exception as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail=str(e)) from e
 
     primary_states = propagate_batch(primary_tle, days=3.0, step_seconds=60.0)
     sec_states = propagate_batch(
@@ -292,7 +292,7 @@ async def post_maneuver(req: ManeuverRequest) -> dict[str, Any]:
     try:
         result = planner.plan(event, threshold_pc=req.threshold_pc)
     except AssertionError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
     response: dict[str, Any] = {
         "action_required": result.action_required,

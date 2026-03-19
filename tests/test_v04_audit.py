@@ -6,16 +6,13 @@ These tests verify the NEW code paths introduced in v0.4 that had zero coverage.
 
 from __future__ import annotations
 
-import math
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 
 from satguard.api.app import CONJUNCTIONS_TTL, app, classify_orbit
-from satguard.api.cache import TTLCache, cache
-
+from satguard.api.cache import cache
 
 # ============================================================
 # L2: Conjunction output sanity tests (domain invariants)
@@ -151,7 +148,7 @@ class TestConjunctionSanity:
         data = client.get("/api/conjunctions").json()
         # The API returns cached data as-is (filtering happens during computation)
         # But if we manually check the invariant:
-        for c in data:
+        for _c in data:
             # NOTE: cached data bypasses filtering, so this test validates
             # that the COMPUTATION phase filters correctly.
             # We verify the invariant on realistic data above.
@@ -260,7 +257,7 @@ class TestStartEpochFix:
         """_jd_from_datetime produces valid Julian date for current time."""
         from satguard.propagate.sgp4 import _jd_from_datetime
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         jd, fr = _jd_from_datetime(now)
 
         # JD for 2026 should be ~2461000+
