@@ -194,9 +194,17 @@ async def _screen_async(
             cdm = write_cdm(event, pc)
             click.echo(f"\n      --- CDM ---\n{cdm}")
 
-        # Record to history
+        # Record to history (v0.6: include TLE lines for replay)
         if store and not math.isnan(pc):
             from satguard.history.store import PcSnapshot
+
+            # Find secondary TLE for archival
+            sec_tle = None
+            for tle in catalog:
+                if tle.norad_id == event.norad_id_secondary:
+                    sec_tle = tle
+                    break
+
             snap = PcSnapshot(
                 timestamp=datetime.now(UTC),
                 tca=event.tca,
@@ -204,8 +212,12 @@ async def _screen_async(
                 pc_foster=pc,
                 pc_chan=pc_c,
                 tle_epoch_primary=primary_tle.epoch_datetime,
-                tle_epoch_secondary=primary_tle.epoch_datetime,
+                tle_epoch_secondary=sec_tle.epoch_datetime if sec_tle else primary_tle.epoch_datetime,
                 covariance_source="default_LEO",
+                tle_line1_primary=primary_tle.line1,
+                tle_line2_primary=primary_tle.line2,
+                tle_line1_secondary=sec_tle.line1 if sec_tle else None,
+                tle_line2_secondary=sec_tle.line2 if sec_tle else None,
             )
             store.record(snap, event.norad_id_primary, event.norad_id_secondary)
 
@@ -330,7 +342,13 @@ async def _watch_async(
         except Exception:
             continue
 
-        # Record snapshot
+        # Record snapshot (v0.6: include TLE lines for replay)
+        sec_tle = None
+        for tle in catalog:
+            if tle.norad_id == event.norad_id_secondary:
+                sec_tle = tle
+                break
+
         snap = PcSnapshot(
             timestamp=datetime.now(UTC),
             tca=event.tca,
@@ -338,8 +356,12 @@ async def _watch_async(
             pc_foster=pc,
             pc_chan=pc_c,
             tle_epoch_primary=primary_tle.epoch_datetime,
-            tle_epoch_secondary=primary_tle.epoch_datetime,
+            tle_epoch_secondary=sec_tle.epoch_datetime if sec_tle else primary_tle.epoch_datetime,
             covariance_source="default_LEO",
+            tle_line1_primary=primary_tle.line1,
+            tle_line2_primary=primary_tle.line2,
+            tle_line1_secondary=sec_tle.line1 if sec_tle else None,
+            tle_line2_secondary=sec_tle.line2 if sec_tle else None,
         )
         store.record(snap, event.norad_id_primary, event.norad_id_secondary)
 
@@ -576,6 +598,243 @@ async def _fleet_screen_async(
         out = Path(output_path)
         generate_report(fleet_config, conjunctions, out)
         click.echo(f"\nPDF report saved: {out}")
+
+
+# ---------------------------------------------------------------------------
+# maneuver (v0.6) — collision avoidance maneuver planning
+# ---------------------------------------------------------------------------
+
+
+@cli.command()
+@click.option("--norad-id", required=True, type=int, help="Primary object NORAD ID")
+@click.option("--secondary", required=True, type=int, help="Secondary object NORAD ID")
+@click.option("--days", default=3, type=float, help="Screening window in days")
+@click.option("--threshold", default=1e-4, type=float, help="Pc threshold (default: 1e-4)")
+@click.option("--dv-max", default=1.0, type=float, help="Max delta-v in m/s (default: 1.0)")
+def maneuver(
+    norad_id: int,
+    secondary: int,
+    days: float,
+    threshold: float,
+    dv_max: float,
+) -> None:
+    """Plan collision avoidance maneuver for a conjunction."""
+    asyncio.run(_maneuver_async(norad_id, secondary, days, threshold, dv_max))
+
+
+async def _maneuver_async(
+    norad_id: int,
+    secondary_id: int,
+    days: float,
+    threshold: float,
+    dv_max: float,
+) -> None:
+    from satguard.maneuver.planner import ManeuverPlanner
+
+    click.echo("SatGuard Maneuver Planning")
+    click.echo(f"{'=' * 50}")
+    click.echo(f"Primary:    NORAD {norad_id}")
+    click.echo(f"Secondary:  NORAD {secondary_id}")
+    click.echo(f"Threshold:  Pc < {threshold:.1e}")
+    click.echo(f"Max Δv:     {dv_max:.2f} m/s")
+    click.echo()
+
+    # Fetch TLEs
+    click.echo("Fetching TLEs...")
+    try:
+        primary_tle = await fetch_tle_by_norad(norad_id)
+        secondary_tle = await fetch_tle_by_norad(secondary_id)
+    except Exception as e:
+        click.echo(f"ERROR: {e}", err=True)
+        sys.exit(1)
+
+    click.echo(f"  Primary:   {primary_tle.name}")
+    click.echo(f"  Secondary: {secondary_tle.name}")
+    click.echo()
+
+    # Screen for conjunctions
+    click.echo("Screening for conjunctions...")
+    primary_states = propagate_batch(primary_tle, days=days, step_seconds=60.0)
+    sec_states = propagate_batch(
+        secondary_tle, days=days, step_seconds=60.0, start=primary_tle.epoch_datetime,
+    )
+    events = screen_conjunctions(primary_states, sec_states, threshold_km=50.0)
+
+    if not events:
+        click.echo("No conjunctions found within screening window.")
+        return
+
+    click.echo(f"Found {len(events)} conjunction(s). Planning maneuver for closest...")
+    event = events[0]  # Closest approach
+
+    click.echo(f"\nConjunction:")
+    click.echo(f"  TCA:       {event.tca.isoformat()}")
+    click.echo(f"  Miss:      {event.miss_distance_km:.3f} km")
+    click.echo(f"  Vrel:      {event.relative_velocity_km_s:.3f} km/s")
+
+    # Plan maneuver
+    planner = ManeuverPlanner(
+        dv_range_ms=(0.01, dv_max),
+        dv_steps=30,
+        time_steps=30,
+    )
+    try:
+        result = planner.plan(event, threshold_pc=threshold)
+    except AssertionError as e:
+        click.echo(f"\nERROR: {e}", err=True)
+        sys.exit(1)
+
+    click.echo(f"  Pc:        {result.original_pc:.2e}")
+    click.echo()
+
+    if not result.action_required:
+        click.echo(f"NO ACTION REQUIRED — Pc ({result.original_pc:.2e}) < threshold ({threshold:.1e})")
+        return
+
+    click.echo(f"ACTION REQUIRED — Pc ({result.original_pc:.2e}) > threshold ({threshold:.1e})")
+
+    if result.recommended:
+        r = result.recommended
+        click.echo(f"\nRECOMMENDED MANEUVER:")
+        click.echo(f"  Δv:          {r.burn.delta_v_ms:.3f} m/s ({r.burn.direction})")
+        click.echo(f"  Lead time:   {r.burn.time_before_tca_s/3600:.1f} hours before TCA")
+        click.echo(f"  Displacement: {r.displacement.magnitude_km:.3f} km")
+        click.echo(f"  Post-miss:   {r.post_miss_km:.3f} km (was {r.original_miss_km:.3f} km)")
+        click.echo(f"  Post-Pc:     {r.post_pc:.2e} (was {r.original_pc:.2e})")
+        reduction = r.original_pc / max(r.post_pc, 1e-30)
+        click.echo(f"  Reduction:   {reduction:.0f}×")
+    else:
+        click.echo(f"\nWARNING: No maneuver found within Δv ≤ {dv_max:.2f} m/s "
+                    f"that reduces Pc below {threshold:.1e}.")
+        click.echo("Consider increasing --dv-max or adjusting the threshold.")
+
+    # Show tradespace summary (top 5 options by increasing Δv)
+    below = [o for o in result.options if o.post_pc <= threshold]
+    if below:
+        click.echo(f"\nTradespace: {len(below)} option(s) meet threshold")
+        click.echo(f"{'Δv(m/s)':>10} {'Lead(h)':>10} {'Post-miss(km)':>14} {'Post-Pc':>12}")
+        click.echo(f"{'─' * 50}")
+        for opt in below[:5]:
+            click.echo(
+                f"{opt.burn.delta_v_ms:>10.3f} "
+                f"{opt.burn.time_before_tca_s/3600:>10.1f} "
+                f"{opt.post_miss_km:>14.3f} "
+                f"{opt.post_pc:>12.2e}"
+            )
+
+
+# ---------------------------------------------------------------------------
+# replay (v0.6) — historical replay of conjunction evolution
+# ---------------------------------------------------------------------------
+
+
+@cli.command()
+@click.option(
+    "--norad-ids", required=True, type=str, help="NORAD IDs (e.g., 25544,41335)",
+)
+@click.option("--history-dir", type=click.Path(), default=None, help="History directory")
+@click.option("--plot", is_flag=True, help="Save replay plot as PNG")
+def replay(norad_ids: str, history_dir: str | None, plot: bool) -> None:
+    """Replay historical conjunction evolution from archived TLEs."""
+    parts = norad_ids.split(",")
+    if len(parts) != 2:
+        click.echo("ERROR: --norad-ids must be two comma-separated integers", err=True)
+        sys.exit(1)
+
+    try:
+        id_a, id_b = int(parts[0].strip()), int(parts[1].strip())
+    except ValueError:
+        click.echo("ERROR: NORAD IDs must be integers", err=True)
+        sys.exit(1)
+
+    from satguard.history.replay import replay_conjunction
+    from satguard.history.store import HistoryStore
+
+    hdir = Path(history_dir) if history_dir else None
+    store = HistoryStore(base_dir=hdir)
+
+    a, b = min(id_a, id_b), max(id_a, id_b)
+    conjs = store.list_conjunctions()
+    matching = [(na, nb, d) for na, nb, d in conjs if na == a and nb == b]
+
+    if not matching:
+        click.echo(f"No history found for NORAD {a} vs {b}")
+        return
+
+    for na, nb, date_str in matching:
+        from datetime import datetime as dt
+        tca_date = dt.strptime(date_str, "%Y%m%d").replace(tzinfo=UTC)
+        hist = store.load(na, nb, tca_date)
+        if hist is None:
+            continue
+
+        result = replay_conjunction(hist)
+
+        click.echo(f"\nReplay: NORAD {na} vs {nb} (TCA ~{date_str})")
+        click.echo(f"  Snapshots with TLEs: {len(result.timeline)}/{len(hist.snapshots)}")
+
+        if not result.timeline:
+            click.echo("  No snapshots have archived TLE data for replay.")
+            continue
+
+        click.echo(f"  Peak Pc:  {result.peak_pc:.2e}")
+        click.echo(f"  Final Pc: {result.final_pc:.2e}")
+
+        click.echo("\n  Time             | Miss(km) | Pc       | Stored Miss | Stored Pc | TLE Age P(h) | TLE Age S(h)")
+        click.echo(f"  {'-' * 95}")
+        for pt in result.timeline:
+            click.echo(
+                f"  {pt.timestamp.strftime('%Y-%m-%d %H:%M')} | "
+                f"{pt.miss_km:>8.3f} | {pt.pc:.2e} | "
+                f"{pt.stored_miss_km:>11.3f} | {pt.stored_pc:.2e} | "
+                f"{pt.tle_age_primary_h:>12.1f} | {pt.tle_age_secondary_h:>12.1f}"
+            )
+
+        if plot and len(result.timeline) > 1:
+            _plot_replay(result, na, nb, date_str)
+
+
+def _plot_replay(result, norad_a: int, norad_b: int, date_str: str) -> None:  # type: ignore[no-untyped-def]
+    """Save a replay comparison plot."""
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except ImportError:
+        click.echo("  WARNING: matplotlib not available, skipping plot")
+        return
+
+    times = [pt.timestamp for pt in result.timeline]
+    pcs_replay = [pt.pc for pt in result.timeline]
+    pcs_stored = [pt.stored_pc for pt in result.timeline]
+
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
+
+    # Pc comparison
+    ax1.semilogy(times, pcs_replay, "o-", color="tab:blue", label="Replayed Pc", linewidth=2)
+    ax1.semilogy(times, pcs_stored, "s--", color="tab:orange", label="Stored Pc", linewidth=1)
+    ax1.set_ylabel("Collision Probability")
+    ax1.set_title(f"SatGuard Replay — NORAD {norad_a} vs {norad_b}")
+    ax1.legend()
+    ax1.grid(True, alpha=0.3)
+
+    # Miss distance comparison
+    miss_replay = [pt.miss_km for pt in result.timeline]
+    miss_stored = [pt.stored_miss_km for pt in result.timeline]
+    ax2.plot(times, miss_replay, "o-", color="tab:blue", label="Replayed Miss", linewidth=2)
+    ax2.plot(times, miss_stored, "s--", color="tab:orange", label="Stored Miss", linewidth=1)
+    ax2.set_ylabel("Miss Distance (km)")
+    ax2.set_xlabel("Assessment Time (UTC)")
+    ax2.legend()
+    ax2.grid(True, alpha=0.3)
+
+    fig.autofmt_xdate()
+    fig.tight_layout()
+
+    fname = f"replay_{norad_a}_{norad_b}_{date_str}.png"
+    fig.savefig(fname, dpi=150)
+    plt.close(fig)
+    click.echo(f"  Plot saved: {fname}")
 
 
 async def _alert_test_async(config_path: str | None) -> None:

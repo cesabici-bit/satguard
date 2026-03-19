@@ -19,6 +19,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 from satguard.api.cache import cache
 
@@ -43,13 +44,13 @@ async def _precompute_conjunctions() -> None:
         logger.exception("Background pre-compute failed — first request will compute on demand.")
 
 
-app = FastAPI(title="SatGuard API", version="0.5.1", lifespan=lifespan)
+app = FastAPI(title="SatGuard API", version="0.6.0", lifespan=lifespan)
 
 # CORS for Vite dev server
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
-    allow_methods=["GET"],
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
@@ -236,6 +237,159 @@ async def get_object_detail(norad_id: int) -> dict[str, Any]:
 
     # Return all fields except raw TLE lines (those are in /api/catalog)
     return {k: v for k, v in entry.items() if k not in ("line1", "line2")}
+
+
+# ---------------------------------------------------------------------------
+# Maneuver planning endpoint (v0.6)
+# ---------------------------------------------------------------------------
+
+
+class ManeuverRequest(BaseModel):
+    norad_id_primary: int
+    norad_id_secondary: int
+    threshold_pc: float = 1e-4
+    dv_max_ms: float = 1.0
+
+
+@app.post("/api/maneuver")
+async def post_maneuver(req: ManeuverRequest) -> dict[str, Any]:
+    """Plan a collision avoidance maneuver for a conjunction pair.
+
+    Fetches current TLEs, screens for closest approach, then runs
+    CW tradespace search.
+    """
+    from satguard.catalog.celestrak import fetch_tle_by_norad
+    from satguard.maneuver.planner import ManeuverPlanner
+    from satguard.propagate.sgp4 import propagate_batch
+    from satguard.screen.screener import screen as screen_conjunctions
+
+    try:
+        primary_tle = await fetch_tle_by_norad(req.norad_id_primary)
+        secondary_tle = await fetch_tle_by_norad(req.norad_id_secondary)
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    primary_states = propagate_batch(primary_tle, days=3.0, step_seconds=60.0)
+    sec_states = propagate_batch(
+        secondary_tle, days=3.0, step_seconds=60.0,
+        start=primary_tle.epoch_datetime,
+    )
+    events = screen_conjunctions(primary_states, sec_states, threshold_km=50.0)
+
+    if not events:
+        return {
+            "action_required": False,
+            "message": "No conjunctions found within screening window",
+        }
+
+    event = events[0]
+    planner = ManeuverPlanner(
+        dv_range_ms=(0.01, req.dv_max_ms),
+        dv_steps=25,
+        time_steps=25,
+    )
+
+    try:
+        result = planner.plan(event, threshold_pc=req.threshold_pc)
+    except AssertionError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    response: dict[str, Any] = {
+        "action_required": result.action_required,
+        "original_pc": result.original_pc,
+        "threshold": result.threshold,
+        "event": {
+            "tca": event.tca.isoformat(),
+            "miss_distance_km": round(event.miss_distance_km, 4),
+            "relative_velocity_km_s": round(event.relative_velocity_km_s, 3),
+        },
+        "options_count": len(result.options),
+    }
+
+    if result.recommended:
+        r = result.recommended
+        response["recommended"] = {
+            "delta_v_ms": round(r.burn.delta_v_ms, 4),
+            "lead_time_hours": round(r.burn.time_before_tca_s / 3600.0, 2),
+            "direction": r.burn.direction,
+            "post_miss_km": round(r.post_miss_km, 4),
+            "post_pc": r.post_pc,
+            "displacement_km": round(r.displacement.magnitude_km, 4),
+        }
+
+    return response
+
+
+# ---------------------------------------------------------------------------
+# Historical replay endpoint (v0.6)
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/replay/{norad_a}/{norad_b}")
+async def get_replay(
+    norad_a: int,
+    norad_b: int,
+    tca_date: str | None = None,
+) -> dict[str, Any]:
+    """Replay conjunction history from archived TLEs.
+
+    Args:
+        norad_a: First NORAD ID.
+        norad_b: Second NORAD ID.
+        tca_date: Optional TCA date filter (YYYYMMDD).
+
+    Returns:
+        ReplayResult as JSON with timeline of recomputed values.
+    """
+    from datetime import UTC, datetime
+
+    from satguard.history.replay import replay_conjunction
+    from satguard.history.store import HistoryStore
+
+    store = HistoryStore()
+    a, b = min(norad_a, norad_b), max(norad_a, norad_b)
+    conjs = store.list_conjunctions()
+    matching = [(na, nb, d) for na, nb, d in conjs if na == a and nb == b]
+
+    if tca_date:
+        matching = [(na, nb, d) for na, nb, d in matching if d == tca_date]
+
+    if not matching:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No history found for NORAD {a} vs {b}",
+        )
+
+    results = []
+    for na, nb, date_str in matching:
+        tca_dt = datetime.strptime(date_str, "%Y%m%d").replace(tzinfo=UTC)
+        hist = store.load(na, nb, tca_dt)
+        if hist is None:
+            continue
+
+        replay = replay_conjunction(hist)
+        results.append({
+            "norad_a": replay.norad_a,
+            "norad_b": replay.norad_b,
+            "tca_date": date_str,
+            "peak_pc": replay.peak_pc,
+            "final_pc": replay.final_pc,
+            "timeline": [
+                {
+                    "timestamp": pt.timestamp.isoformat(),
+                    "tca": pt.tca.isoformat(),
+                    "miss_km": round(pt.miss_km, 4),
+                    "pc": pt.pc,
+                    "stored_miss_km": round(pt.stored_miss_km, 4),
+                    "stored_pc": pt.stored_pc,
+                    "tle_age_primary_h": round(pt.tle_age_primary_h, 2),
+                    "tle_age_secondary_h": round(pt.tle_age_secondary_h, 2),
+                }
+                for pt in replay.timeline
+            ],
+        })
+
+    return {"conjunctions": results}
 
 
 def mount_static(dist_dir: str | Path | None = None) -> None:

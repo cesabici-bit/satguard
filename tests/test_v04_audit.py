@@ -281,7 +281,7 @@ class TestBackgroundPrecompute:
 
     def test_app_version_updated(self) -> None:
         """App version must reflect the pre-compute enhancement."""
-        assert app.version == "0.5.1"
+        assert app.version == "0.6.0"
 
     def test_lifespan_configured(self) -> None:
         """App must have a lifespan handler for background pre-compute."""

@@ -31,6 +31,12 @@ class PcSnapshot:
     tle_epoch_secondary: datetime
     covariance_source: str
 
+    # v0.6: Optional archived TLE lines for historical replay
+    tle_line1_primary: str | None = None
+    tle_line2_primary: str | None = None
+    tle_line1_secondary: str | None = None
+    tle_line2_secondary: str | None = None
+
 
 @dataclass(frozen=True, slots=True)
 class ConjunctionHistory:
@@ -72,6 +78,11 @@ def _dict_to_snapshot(d: dict) -> PcSnapshot:
         tle_epoch_primary=_str_to_dt(d["tle_epoch_primary"]),
         tle_epoch_secondary=_str_to_dt(d["tle_epoch_secondary"]),
         covariance_source=d["covariance_source"],
+        # v0.6: backward-compatible — old JSON won't have these fields
+        tle_line1_primary=d.get("tle_line1_primary"),
+        tle_line2_primary=d.get("tle_line2_primary"),
+        tle_line1_secondary=d.get("tle_line1_secondary"),
+        tle_line2_secondary=d.get("tle_line2_secondary"),
     )
 
 
