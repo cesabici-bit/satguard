@@ -280,6 +280,10 @@ satguard/
 - CCSDS 508.0-B-1: Conjunction Data Message standard.
 - Clohessy, W.H. & Wiltshire, R.S. (1960). "Terminal Guidance System for Satellite Rendezvous." *J. Aerospace Sciences*.
 
+## Acknowledgments
+
+Development assisted by [Claude Code](https://claude.ai/claude-code) (Anthropic).
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
